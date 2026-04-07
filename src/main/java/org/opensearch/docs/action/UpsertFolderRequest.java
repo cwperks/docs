@@ -20,53 +20,41 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.docs.Constants;
 
-public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
-  private final String documentId;
-  private final String title;
-  private final String content;
+public class UpsertFolderRequest extends ActionRequest implements DocRequest {
   private final String folderId;
+  private final String name;
+  private final String parentId;
   private final Long seqNo;
   private final Long primaryTerm;
 
-  public UpsertDocumentRequest(
-      String documentId,
-      String title,
-      String content,
-      String folderId,
-      Long seqNo,
-      Long primaryTerm) {
-    this.documentId = documentId;
-    this.title = title;
-    this.content = content;
-    this.folderId = folderId == null ? "" : folderId.trim();
+  public UpsertFolderRequest(
+      String folderId, String name, String parentId, Long seqNo, Long primaryTerm) {
+    this.folderId = folderId;
+    this.name = name;
+    this.parentId = parentId == null ? "" : parentId.trim();
     this.seqNo = seqNo;
     this.primaryTerm = primaryTerm;
   }
 
-  public UpsertDocumentRequest(StreamInput in) throws IOException {
+  public UpsertFolderRequest(StreamInput in) throws IOException {
     super(in);
-    this.documentId = in.readOptionalString();
-    this.title = in.readString();
-    this.content = in.readString();
-    this.folderId = in.readString();
+    this.folderId = in.readOptionalString();
+    this.name = in.readString();
+    this.parentId = in.readString();
     this.seqNo = in.readOptionalLong();
     this.primaryTerm = in.readOptionalLong();
   }
 
-  public String getDocumentId() {
-    return documentId;
-  }
-
-  public String getTitle() {
-    return title;
-  }
-
-  public String getContent() {
-    return content;
-  }
-
   public String getFolderId() {
     return folderId;
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public String getParentId() {
+    return parentId;
   }
 
   public long getSeqNo() {
@@ -84,27 +72,24 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
 
   @Override
   public String id() {
-    return documentId;
+    return folderId;
   }
 
   @Override
   public String type() {
-    return Constants.DOC_RESOURCE_TYPE;
+    return Constants.FOLDER_RESOURCE_TYPE;
   }
 
   @Override
   public ActionRequestValidationException validate() {
     ActionRequestValidationException validationException = null;
-    if (Strings.hasText(title) == false) {
-      validationException = addValidationError("title is required", validationException);
+    if (Strings.hasText(name) == false) {
+      validationException = addValidationError("name is required", validationException);
     }
-    if (content == null) {
-      validationException = addValidationError("content is required", validationException);
-    }
-    if (documentId != null && (seqNo == null || primaryTerm == null)) {
+    if (folderId != null && (seqNo == null || primaryTerm == null)) {
       validationException =
           addValidationError(
-              "seqNo and primaryTerm are required when updating an existing document",
+              "seqNo and primaryTerm are required when updating an existing folder",
               validationException);
     }
     return validationException;
@@ -113,10 +98,9 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
   @Override
   public void writeTo(StreamOutput out) throws IOException {
     super.writeTo(out);
-    out.writeOptionalString(documentId);
-    out.writeString(title);
-    out.writeString(content);
-    out.writeString(folderId);
+    out.writeOptionalString(folderId);
+    out.writeString(name);
+    out.writeString(parentId);
     out.writeOptionalLong(seqNo);
     out.writeOptionalLong(primaryTerm);
   }

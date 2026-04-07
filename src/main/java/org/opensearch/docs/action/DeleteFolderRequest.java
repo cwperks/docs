@@ -20,49 +20,22 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.docs.Constants;
 
-public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
-  private final String documentId;
-  private final String title;
-  private final String content;
+public class DeleteFolderRequest extends ActionRequest implements DocRequest {
   private final String folderId;
   private final Long seqNo;
   private final Long primaryTerm;
 
-  public UpsertDocumentRequest(
-      String documentId,
-      String title,
-      String content,
-      String folderId,
-      Long seqNo,
-      Long primaryTerm) {
-    this.documentId = documentId;
-    this.title = title;
-    this.content = content;
-    this.folderId = folderId == null ? "" : folderId.trim();
+  public DeleteFolderRequest(String folderId, Long seqNo, Long primaryTerm) {
+    this.folderId = folderId;
     this.seqNo = seqNo;
     this.primaryTerm = primaryTerm;
   }
 
-  public UpsertDocumentRequest(StreamInput in) throws IOException {
+  public DeleteFolderRequest(StreamInput in) throws IOException {
     super(in);
-    this.documentId = in.readOptionalString();
-    this.title = in.readString();
-    this.content = in.readString();
     this.folderId = in.readString();
     this.seqNo = in.readOptionalLong();
     this.primaryTerm = in.readOptionalLong();
-  }
-
-  public String getDocumentId() {
-    return documentId;
-  }
-
-  public String getTitle() {
-    return title;
-  }
-
-  public String getContent() {
-    return content;
   }
 
   public String getFolderId() {
@@ -84,28 +57,24 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
 
   @Override
   public String id() {
-    return documentId;
+    return folderId;
   }
 
   @Override
   public String type() {
-    return Constants.DOC_RESOURCE_TYPE;
+    return Constants.FOLDER_RESOURCE_TYPE;
   }
 
   @Override
   public ActionRequestValidationException validate() {
     ActionRequestValidationException validationException = null;
-    if (Strings.hasText(title) == false) {
-      validationException = addValidationError("title is required", validationException);
+    if (Strings.hasText(folderId) == false) {
+      validationException = addValidationError("folderId is required", validationException);
     }
-    if (content == null) {
-      validationException = addValidationError("content is required", validationException);
-    }
-    if (documentId != null && (seqNo == null || primaryTerm == null)) {
+    if (seqNo == null || primaryTerm == null) {
       validationException =
           addValidationError(
-              "seqNo and primaryTerm are required when updating an existing document",
-              validationException);
+              "seqNo and primaryTerm are required when deleting a folder", validationException);
     }
     return validationException;
   }
@@ -113,9 +82,6 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
   @Override
   public void writeTo(StreamOutput out) throws IOException {
     super.writeTo(out);
-    out.writeOptionalString(documentId);
-    out.writeString(title);
-    out.writeString(content);
     out.writeString(folderId);
     out.writeOptionalLong(seqNo);
     out.writeOptionalLong(primaryTerm);

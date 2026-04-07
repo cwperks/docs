@@ -14,8 +14,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.DocWriteResponse;
 import org.opensearch.action.get.GetRequest;
@@ -29,13 +29,22 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.docs.Constants;
 import org.opensearch.docs.action.DeleteDocumentRequest;
 import org.opensearch.docs.action.DeleteDocumentResponse;
+import org.opensearch.docs.action.DeleteFolderRequest;
+import org.opensearch.docs.action.DeleteFolderResponse;
 import org.opensearch.docs.action.GetDocumentResponse;
+import org.opensearch.docs.action.GetFolderResponse;
 import org.opensearch.docs.action.ListDocumentsResponse;
+import org.opensearch.docs.action.ListFoldersResponse;
 import org.opensearch.docs.action.UpsertDocumentRequest;
 import org.opensearch.docs.action.UpsertDocumentResponse;
+import org.opensearch.docs.action.UpsertFolderRequest;
+import org.opensearch.docs.action.UpsertFolderResponse;
 import org.opensearch.docs.model.DocumentRecord;
 import org.opensearch.docs.model.DocumentSummary;
+import org.opensearch.docs.model.FolderRecord;
+import org.opensearch.docs.model.FolderSummary;
 import org.opensearch.index.query.BoolQueryBuilder;
+import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.search.sort.SortOrder;
@@ -60,8 +69,7 @@ public class DocumentIndexService {
 
               SearchSourceBuilder sourceBuilder =
                   new SearchSourceBuilder().size(size).sort("updated_at", SortOrder.DESC);
-              BoolQueryBuilder visibilityFilter =
-                  QueryBuilders.boolQuery().mustNot(QueryBuilders.termQuery("is_deleted", true));
+              BoolQueryBuilder visibilityFilter = activeResourceFilter(Constants.DOC_RESOURCE_TYPE);
               if (query == null || query.isBlank()) {
                 sourceBuilder.query(visibilityFilter.must(QueryBuilders.matchAllQuery()));
               } else {
@@ -124,7 +132,9 @@ public class DocumentIndexService {
                                 response.getSeqNo(),
                                 response.getPrimaryTerm(),
                                 response.getSourceAsMap());
-                        if (document.isDeleted()) {
+                        if (document.isDeleted()
+                            || Constants.DOC_RESOURCE_TYPE.equals(document.getResourceType())
+                                == false) {
                           listener.onFailure(
                               new ResourceNotFoundException(
                                   "Document [" + documentId + "] does not exist"));
@@ -177,7 +187,9 @@ public class DocumentIndexService {
                                 response.getSeqNo(),
                                 response.getPrimaryTerm(),
                                 response.getSourceAsMap());
-                        if (existing.isDeleted()) {
+                        if (existing.isDeleted()
+                            || Constants.DOC_RESOURCE_TYPE.equals(existing.getResourceType())
+                                == false) {
                           listener.onFailure(
                               new ResourceNotFoundException(
                                   "Document [" + request.getDocumentId() + "] does not exist"));
@@ -186,13 +198,14 @@ public class DocumentIndexService {
 
                         long now = Instant.now().toEpochMilli();
                         DocumentRecord deleted =
-                        new DocumentRecord(
+                            new DocumentRecord(
                                 existing.getId(),
                                 existing.getResourceType(),
                                 existing.getAllSharedPrincipals(),
                                 existing.getTitle(),
                                 existing.getContent(),
-                                existing.getFolder(),
+                                existing.getFolderId(),
+                                existing.getFolderPath(),
                                 existing.getOwner(),
                                 actor,
                                 existing.getCreatedAt(),
@@ -226,61 +239,258 @@ public class DocumentIndexService {
             listener::onFailure));
   }
 
+  public void listFolders(String query, int size, ActionListener<ListFoldersResponse> listener) {
+    indexExists(
+        ActionListener.wrap(
+            exists -> {
+              if (exists == false) {
+                listener.onResponse(new ListFoldersResponse(List.of()));
+                return;
+              }
+
+              SearchSourceBuilder sourceBuilder =
+                  new SearchSourceBuilder()
+                      .size(size)
+                      .sort("path.keyword", SortOrder.ASC)
+                      .sort("updated_at", SortOrder.DESC);
+              BoolQueryBuilder visibilityFilter =
+                  activeResourceFilter(Constants.FOLDER_RESOURCE_TYPE);
+              if (query == null || query.isBlank()) {
+                sourceBuilder.query(visibilityFilter.must(QueryBuilders.matchAllQuery()));
+              } else {
+                BoolQueryBuilder boolQuery =
+                    QueryBuilders.boolQuery()
+                        .should(QueryBuilders.matchPhrasePrefixQuery("name", query).boost(4.0f))
+                        .should(QueryBuilders.matchPhrasePrefixQuery("path", query).boost(2.0f))
+                        .minimumShouldMatch(1);
+                sourceBuilder.query(visibilityFilter.must(boolQuery));
+              }
+
+              SearchRequest searchRequest =
+                  new SearchRequest(Constants.DOCS_INDEX).source(sourceBuilder);
+              pluginClient.search(
+                  searchRequest,
+                  ActionListener.wrap(
+                      response -> {
+                        List<FolderSummary> folders =
+                            java.util.Arrays.stream(response.getHits().getHits())
+                                .map(
+                                    hit ->
+                                        FolderRecord.fromSource(
+                                                hit.getId(),
+                                                hit.getSeqNo(),
+                                                hit.getPrimaryTerm(),
+                                                hit.getSourceAsMap())
+                                            .toSummary())
+                                .toList();
+                        listener.onResponse(new ListFoldersResponse(folders));
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  public void getFolder(String folderId, ActionListener<GetFolderResponse> listener) {
+    indexExists(
+        ActionListener.wrap(
+            exists -> {
+              if (exists == false) {
+                listener.onFailure(
+                    new ResourceNotFoundException("Folder [" + folderId + "] does not exist"));
+                return;
+              }
+
+              pluginClient.get(
+                  new GetRequest(Constants.DOCS_INDEX, folderId),
+                  ActionListener.wrap(
+                      response -> {
+                        if (response.isExists() == false) {
+                          listener.onFailure(
+                              new ResourceNotFoundException(
+                                  "Folder [" + folderId + "] does not exist"));
+                          return;
+                        }
+
+                        FolderRecord folder =
+                            FolderRecord.fromSource(
+                                response.getId(),
+                                response.getSeqNo(),
+                                response.getPrimaryTerm(),
+                                response.getSourceAsMap());
+                        if (folder.isDeleted()
+                            || Constants.FOLDER_RESOURCE_TYPE.equals(folder.getResourceType())
+                                == false) {
+                          listener.onFailure(
+                              new ResourceNotFoundException(
+                                  "Folder [" + folderId + "] does not exist"));
+                          return;
+                        }
+                        listener.onResponse(new GetFolderResponse(folder));
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  public void upsertFolder(
+      UpsertFolderRequest request, String actor, ActionListener<UpsertFolderResponse> listener) {
+    ensureIndexReady(
+        ActionListener.wrap(
+            ignored -> {
+              if (request.getFolderId() == null) {
+                createFolder(request, actor, listener);
+                return;
+              }
+              updateFolder(request, actor, listener);
+            },
+            listener::onFailure));
+  }
+
+  public void deleteFolder(
+      DeleteFolderRequest request, String actor, ActionListener<DeleteFolderResponse> listener) {
+    ensureIndexReady(
+        ActionListener.wrap(
+            ignored ->
+                getFolderRecord(
+                    request.getFolderId(),
+                    ActionListener.wrap(
+                        existing ->
+                            ensureFolderHasNoChildren(
+                                existing,
+                                ActionListener.wrap(
+                                    hasChildren -> {
+                                      if (hasChildren) {
+                                        listener.onFailure(
+                                            new IllegalStateException(
+                                                "Folder ["
+                                                    + existing.getPath()
+                                                    + "] cannot be deleted while it contains child folders"));
+                                        return;
+                                      }
+
+                                      ensureFolderHasDocuments(
+                                          existing.getPath(),
+                                          ActionListener.wrap(
+                                              hasDocuments -> {
+                                                if (hasDocuments) {
+                                                  listener.onFailure(
+                                                      new IllegalStateException(
+                                                          "Folder ["
+                                                              + existing.getPath()
+                                                              + "] cannot be deleted while it contains documents"));
+                                                  return;
+                                                }
+
+                                                long now = Instant.now().toEpochMilli();
+                                                FolderRecord deleted =
+                                                    new FolderRecord(
+                                                        existing.getId(),
+                                                        existing.getResourceType(),
+                                                        existing.getAllSharedPrincipals(),
+                                                        existing.getName(),
+                                                        existing.getPath(),
+                                                        existing.getParentId(),
+                                                        existing.getOwner(),
+                                                        actor,
+                                                        existing.getCreatedAt(),
+                                                        now,
+                                                        true,
+                                                        now,
+                                                        actor,
+                                                        request.getSeqNo(),
+                                                        request.getPrimaryTerm());
+
+                                                IndexRequest indexRequest =
+                                                    pluginClient
+                                                        .prepareIndex(Constants.DOCS_INDEX)
+                                                        .setId(existing.getId())
+                                                        .setIfSeqNo(request.getSeqNo())
+                                                        .setIfPrimaryTerm(request.getPrimaryTerm())
+                                                        .setSource(
+                                                            toSource(deleted), XContentType.JSON)
+                                                        .setRefreshPolicy(
+                                                            WriteRequest.RefreshPolicy.IMMEDIATE)
+                                                        .request();
+
+                                                pluginClient.index(
+                                                    indexRequest,
+                                                    ActionListener.wrap(
+                                                        indexResponse ->
+                                                            listener.onResponse(
+                                                                new DeleteFolderResponse(
+                                                                    true, indexResponse.getId())),
+                                                        listener::onFailure));
+                                              },
+                                              listener::onFailure));
+                                    },
+                                    listener::onFailure)),
+                        listener::onFailure)),
+            listener::onFailure));
+  }
+
   private void createDocument(
       UpsertDocumentRequest request,
       String actor,
       ActionListener<UpsertDocumentResponse> listener) {
-    long now = Instant.now().toEpochMilli();
-    String documentId = UUID.randomUUID().toString();
-    DocumentRecord document =
-        new DocumentRecord(
-            documentId,
-            Constants.DOC_RESOURCE_TYPE,
-            List.of(),
-            request.getTitle(),
-            request.getContent(),
-            request.getFolder(),
-            actor,
-            actor,
-            now,
-            now,
-            false,
-            0L,
-            "",
-            -1L,
-            -1L);
-
-    IndexRequest indexRequest =
-        pluginClient
-            .prepareIndex(Constants.DOCS_INDEX)
-            .setId(documentId)
-            .setSource(toSource(document), XContentType.JSON)
-            .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
-            .request();
-
-    pluginClient.index(
-        indexRequest,
+    resolveFolderRecord(
+        request.getFolderId(),
         ActionListener.wrap(
-            response ->
-                listener.onResponse(
-                    new UpsertDocumentResponse(
-                        response.getResult() == DocWriteResponse.Result.CREATED,
-                        new DocumentRecord(
-                            response.getId(),
-                            document.getResourceType(),
-                            document.getAllSharedPrincipals(),
-                            document.getTitle(),
-                            document.getContent(),
-                            document.getFolder(),
-                            document.getOwner(),
-                            document.getLastUpdatedBy(),
-                            document.getCreatedAt(),
-                            document.getUpdatedAt(),
-                            document.isDeleted(),
-                            document.getDeletedAt(),
-                            document.getDeletedBy(),
-                            response.getSeqNo(),
-                            response.getPrimaryTerm()))),
+            folder -> {
+              long now = Instant.now().toEpochMilli();
+              String documentId = UUID.randomUUID().toString();
+              DocumentRecord document =
+                  new DocumentRecord(
+                      documentId,
+                      Constants.DOC_RESOURCE_TYPE,
+                      folder == null ? List.of() : folder.getAllSharedPrincipals(),
+                      request.getTitle(),
+                      request.getContent(),
+                      folder == null ? "" : folder.getId(),
+                      folder == null ? "" : folder.getPath(),
+                      actor,
+                      actor,
+                      now,
+                      now,
+                      false,
+                      0L,
+                      "",
+                      -1L,
+                      -1L);
+
+              IndexRequest indexRequest =
+                  pluginClient
+                      .prepareIndex(Constants.DOCS_INDEX)
+                      .setId(documentId)
+                      .setSource(toSource(document), XContentType.JSON)
+                      .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                      .request();
+
+              pluginClient.index(
+                  indexRequest,
+                  ActionListener.wrap(
+                      response ->
+                          listener.onResponse(
+                              new UpsertDocumentResponse(
+                                  response.getResult() == DocWriteResponse.Result.CREATED,
+                                  new DocumentRecord(
+                                      response.getId(),
+                                      document.getResourceType(),
+                                      document.getAllSharedPrincipals(),
+                                      document.getTitle(),
+                                      document.getContent(),
+                                      document.getFolderId(),
+                                      document.getFolderPath(),
+                                      document.getOwner(),
+                                      document.getLastUpdatedBy(),
+                                      document.getCreatedAt(),
+                                      document.getUpdatedAt(),
+                                      document.isDeleted(),
+                                      document.getDeletedAt(),
+                                      document.getDeletedBy(),
+                                      response.getSeqNo(),
+                                      response.getPrimaryTerm()))),
+                      listener::onFailure));
+            },
             listener::onFailure));
   }
 
@@ -299,71 +509,272 @@ public class DocumentIndexService {
                 return;
               }
 
-              Map<String, Object> source = response.getSourceAsMap();
               long now = Instant.now().toEpochMilli();
               DocumentRecord existing =
                   DocumentRecord.fromSource(
-                      response.getId(), response.getSeqNo(), response.getPrimaryTerm(), source);
-              if (existing.isDeleted()) {
+                      response.getId(),
+                      response.getSeqNo(),
+                      response.getPrimaryTerm(),
+                      response.getSourceAsMap());
+              if (existing.isDeleted()
+                  || Constants.DOC_RESOURCE_TYPE.equals(existing.getResourceType()) == false) {
                 listener.onFailure(
                     new ResourceNotFoundException(
                         "Document [" + request.getDocumentId() + "] does not exist"));
                 return;
               }
 
-              DocumentRecord updated =
-                  new DocumentRecord(
-                      existing.getId(),
-                      existing.getResourceType(),
-                      existing.getAllSharedPrincipals(),
-                      request.getTitle(),
-                      request.getContent(),
-                      request.getFolder(),
-                      existing.getOwner(),
-                      actor,
-                      existing.getCreatedAt(),
-                      now,
-                      false,
-                      0L,
-                      "",
-                      request.getSeqNo(),
-                      request.getPrimaryTerm());
-
-              IndexRequest indexRequest =
-                  pluginClient
-                      .prepareIndex(Constants.DOCS_INDEX)
-                      .setId(existing.getId())
-                      .setIfSeqNo(request.getSeqNo())
-                      .setIfPrimaryTerm(request.getPrimaryTerm())
-                      .setSource(toSource(updated), XContentType.JSON)
-                      .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
-                      .request();
-
-              pluginClient.index(
-                  indexRequest,
+              resolveFolderRecord(
+                  request.getFolderId(),
                   ActionListener.wrap(
-                      indexResponse ->
-                          listener.onResponse(
-                              new UpsertDocumentResponse(
-                                  indexResponse.getResult() == DocWriteResponse.Result.CREATED,
-                                  new DocumentRecord(
-                                      indexResponse.getId(),
-                                      updated.getResourceType(),
-                                      updated.getAllSharedPrincipals(),
-                                      updated.getTitle(),
-                                      updated.getContent(),
-                                      updated.getFolder(),
-                                      updated.getOwner(),
-                                      updated.getLastUpdatedBy(),
-                                      updated.getCreatedAt(),
-                                      updated.getUpdatedAt(),
-                                      updated.isDeleted(),
-                                      updated.getDeletedAt(),
-                                      updated.getDeletedBy(),
-                                      indexResponse.getSeqNo(),
-                                      indexResponse.getPrimaryTerm()))),
+                      folder -> {
+                        boolean movedOutOfFolder =
+                            existing.getFolderId().isBlank() == false
+                                && (folder == null
+                                    || existing.getFolderId().equals(folder.getId()) == false);
+                        List<String> principals =
+                            folder != null
+                                ? folder.getAllSharedPrincipals()
+                                : movedOutOfFolder ? List.of() : existing.getAllSharedPrincipals();
+
+                        DocumentRecord updated =
+                            new DocumentRecord(
+                                existing.getId(),
+                                existing.getResourceType(),
+                                principals,
+                                request.getTitle(),
+                                request.getContent(),
+                                folder == null ? "" : folder.getId(),
+                                folder == null ? "" : folder.getPath(),
+                                existing.getOwner(),
+                                actor,
+                                existing.getCreatedAt(),
+                                now,
+                                false,
+                                0L,
+                                "",
+                                request.getSeqNo(),
+                                request.getPrimaryTerm());
+
+                        IndexRequest indexRequest =
+                            pluginClient
+                                .prepareIndex(Constants.DOCS_INDEX)
+                                .setId(existing.getId())
+                                .setIfSeqNo(request.getSeqNo())
+                                .setIfPrimaryTerm(request.getPrimaryTerm())
+                                .setSource(toSource(updated), XContentType.JSON)
+                                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                                .request();
+
+                        pluginClient.index(
+                            indexRequest,
+                            ActionListener.wrap(
+                                indexResponse ->
+                                    listener.onResponse(
+                                        new UpsertDocumentResponse(
+                                            indexResponse.getResult()
+                                                == DocWriteResponse.Result.CREATED,
+                                            new DocumentRecord(
+                                                indexResponse.getId(),
+                                                updated.getResourceType(),
+                                                updated.getAllSharedPrincipals(),
+                                                updated.getTitle(),
+                                                updated.getContent(),
+                                                updated.getFolderId(),
+                                                updated.getFolderPath(),
+                                                updated.getOwner(),
+                                                updated.getLastUpdatedBy(),
+                                                updated.getCreatedAt(),
+                                                updated.getUpdatedAt(),
+                                                updated.isDeleted(),
+                                                updated.getDeletedAt(),
+                                                updated.getDeletedBy(),
+                                                indexResponse.getSeqNo(),
+                                                indexResponse.getPrimaryTerm()))),
+                                listener::onFailure));
+                      },
                       listener::onFailure));
             },
+            listener::onFailure));
+  }
+
+  private void createFolder(
+      UpsertFolderRequest request, String actor, ActionListener<UpsertFolderResponse> listener) {
+    resolveParentFolder(
+        request.getParentId(),
+        ActionListener.wrap(
+            parent -> {
+              String path = buildFolderPath(parent, request.getName());
+              ensureFolderPathAvailable(
+                  path,
+                  null,
+                  ActionListener.wrap(
+                      ignored -> {
+                        long now = Instant.now().toEpochMilli();
+                        String folderId = UUID.randomUUID().toString();
+                        FolderRecord folder =
+                            new FolderRecord(
+                                folderId,
+                                Constants.FOLDER_RESOURCE_TYPE,
+                                List.of(),
+                                request.getName(),
+                                path,
+                                parent == null ? "" : parent.getId(),
+                                actor,
+                                actor,
+                                now,
+                                now,
+                                false,
+                                0L,
+                                "",
+                                -1L,
+                                -1L);
+
+                        IndexRequest indexRequest =
+                            pluginClient
+                                .prepareIndex(Constants.DOCS_INDEX)
+                                .setId(folderId)
+                                .setSource(toSource(folder), XContentType.JSON)
+                                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                                .request();
+
+                        pluginClient.index(
+                            indexRequest,
+                            ActionListener.wrap(
+                                response ->
+                                    listener.onResponse(
+                                        new UpsertFolderResponse(
+                                            response.getResult() == DocWriteResponse.Result.CREATED,
+                                            new FolderRecord(
+                                                response.getId(),
+                                                folder.getResourceType(),
+                                                folder.getAllSharedPrincipals(),
+                                                folder.getName(),
+                                                folder.getPath(),
+                                                folder.getParentId(),
+                                                folder.getOwner(),
+                                                folder.getLastUpdatedBy(),
+                                                folder.getCreatedAt(),
+                                                folder.getUpdatedAt(),
+                                                folder.isDeleted(),
+                                                folder.getDeletedAt(),
+                                                folder.getDeletedBy(),
+                                                response.getSeqNo(),
+                                                response.getPrimaryTerm()))),
+                                listener::onFailure));
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  private void updateFolder(
+      UpsertFolderRequest request, String actor, ActionListener<UpsertFolderResponse> listener) {
+    getFolderRecord(
+        request.getFolderId(),
+        ActionListener.wrap(
+            existing ->
+                resolveParentFolder(
+                    request.getParentId(),
+                    ActionListener.wrap(
+                        parent -> {
+                          if (parent != null && parent.getId().equals(existing.getId())) {
+                            listener.onFailure(
+                                new IllegalArgumentException("Folder cannot be moved into itself"));
+                            return;
+                          }
+                          if (parent != null
+                              && isNestedPath(parent.getPath(), existing.getPath())) {
+                            listener.onFailure(
+                                new IllegalArgumentException(
+                                    "Folder cannot be moved into one of its descendants"));
+                            return;
+                          }
+
+                          String newPath = buildFolderPath(parent, request.getName());
+                          boolean pathChanged = existing.getPath().equals(newPath) == false;
+                          ActionListener<Void> continueUpdate =
+                              ActionListener.wrap(
+                                  ignored ->
+                                      ensureFolderPathAvailable(
+                                          newPath,
+                                          existing.getId(),
+                                          ActionListener.wrap(
+                                              ignoredAvailability -> {
+                                                long now = Instant.now().toEpochMilli();
+                                                FolderRecord updated =
+                                                    new FolderRecord(
+                                                        existing.getId(),
+                                                        existing.getResourceType(),
+                                                        existing.getAllSharedPrincipals(),
+                                                        request.getName(),
+                                                        newPath,
+                                                        parent == null ? "" : parent.getId(),
+                                                        existing.getOwner(),
+                                                        actor,
+                                                        existing.getCreatedAt(),
+                                                        now,
+                                                        false,
+                                                        0L,
+                                                        "",
+                                                        request.getSeqNo(),
+                                                        request.getPrimaryTerm());
+
+                                                IndexRequest indexRequest =
+                                                    pluginClient
+                                                        .prepareIndex(Constants.DOCS_INDEX)
+                                                        .setId(existing.getId())
+                                                        .setIfSeqNo(request.getSeqNo())
+                                                        .setIfPrimaryTerm(request.getPrimaryTerm())
+                                                        .setSource(
+                                                            toSource(updated), XContentType.JSON)
+                                                        .setRefreshPolicy(
+                                                            WriteRequest.RefreshPolicy.IMMEDIATE)
+                                                        .request();
+
+                                                pluginClient.index(
+                                                    indexRequest,
+                                                    ActionListener.wrap(
+                                                        response ->
+                                                            listener.onResponse(
+                                                                new UpsertFolderResponse(
+                                                                    response.getResult()
+                                                                        == DocWriteResponse.Result
+                                                                            .CREATED,
+                                                                    new FolderRecord(
+                                                                        response.getId(),
+                                                                        updated.getResourceType(),
+                                                                        updated
+                                                                            .getAllSharedPrincipals(),
+                                                                        updated.getName(),
+                                                                        updated.getPath(),
+                                                                        updated.getParentId(),
+                                                                        updated.getOwner(),
+                                                                        updated.getLastUpdatedBy(),
+                                                                        updated.getCreatedAt(),
+                                                                        updated.getUpdatedAt(),
+                                                                        updated.isDeleted(),
+                                                                        updated.getDeletedAt(),
+                                                                        updated.getDeletedBy(),
+                                                                        response.getSeqNo(),
+                                                                        response
+                                                                            .getPrimaryTerm()))),
+                                                        listener::onFailure));
+                                              },
+                                              listener::onFailure)),
+                                  listener::onFailure);
+
+                          if (pathChanged == false) {
+                            continueUpdate.onResponse(null);
+                            return;
+                          }
+
+                          ensureFolderCanChangePath(
+                              existing,
+                              ActionListener.wrap(
+                                  ignored -> continueUpdate.onResponse(null), listener::onFailure));
+                        },
+                        listener::onFailure)),
             listener::onFailure));
   }
 
@@ -448,6 +859,169 @@ public class DocumentIndexService {
     }
   }
 
+  private void resolveFolderRecord(String folderId, ActionListener<FolderRecord> listener) {
+    if (folderId == null || folderId.isBlank()) {
+      listener.onResponse(null);
+      return;
+    }
+
+    getFolderRecord(folderId, listener);
+  }
+
+  private void getFolderRecord(String folderId, ActionListener<FolderRecord> listener) {
+    pluginClient.get(
+        new GetRequest(Constants.DOCS_INDEX, folderId),
+        ActionListener.wrap(
+            response -> {
+              if (response.isExists() == false) {
+                listener.onFailure(
+                    new ResourceNotFoundException("Folder [" + folderId + "] does not exist"));
+                return;
+              }
+
+              FolderRecord folder =
+                  FolderRecord.fromSource(
+                      response.getId(),
+                      response.getSeqNo(),
+                      response.getPrimaryTerm(),
+                      response.getSourceAsMap());
+              if (folder.isDeleted()
+                  || Constants.FOLDER_RESOURCE_TYPE.equals(folder.getResourceType()) == false) {
+                listener.onFailure(
+                    new ResourceNotFoundException("Folder [" + folderId + "] does not exist"));
+                return;
+              }
+
+              listener.onResponse(folder);
+            },
+            listener::onFailure));
+  }
+
+  private void resolveParentFolder(String parentId, ActionListener<FolderRecord> listener) {
+    if (parentId == null || parentId.isBlank()) {
+      listener.onResponse(null);
+      return;
+    }
+    getFolderRecord(parentId, listener);
+  }
+
+  private void ensureFolderPathAvailable(
+      String path, String existingFolderId, ActionListener<Void> listener) {
+    SearchSourceBuilder sourceBuilder =
+        new SearchSourceBuilder()
+            .size(10)
+            .query(
+                activeResourceFilter(Constants.FOLDER_RESOURCE_TYPE)
+                    .must(QueryBuilders.termQuery("path.keyword", path)));
+    SearchRequest searchRequest = new SearchRequest(Constants.DOCS_INDEX).source(sourceBuilder);
+    pluginClient.search(
+        searchRequest,
+        ActionListener.wrap(
+            response -> {
+              boolean hasConflict =
+                  java.util.Arrays.stream(response.getHits().getHits())
+                      .anyMatch(
+                          hit ->
+                              existingFolderId == null
+                                  || existingFolderId.equals(hit.getId()) == false);
+              if (hasConflict) {
+                listener.onFailure(
+                    new IllegalArgumentException("Folder path [" + path + "] already exists"));
+                return;
+              }
+              listener.onResponse(null);
+            },
+            listener::onFailure));
+  }
+
+  private void ensureFolderCanChangePath(FolderRecord existing, ActionListener<Void> listener) {
+    ensureFolderHasChildren(
+        existing,
+        ActionListener.wrap(
+            hasChildren -> {
+              if (hasChildren) {
+                listener.onFailure(
+                    new IllegalStateException(
+                        "Folder ["
+                            + existing.getPath()
+                            + "] cannot be renamed or moved while it contains child folders"));
+                return;
+              }
+
+              ensureFolderHasDocuments(
+                  existing.getPath(),
+                  ActionListener.wrap(
+                      hasDocuments -> {
+                        if (hasDocuments) {
+                          listener.onFailure(
+                              new IllegalStateException(
+                                  "Folder ["
+                                      + existing.getPath()
+                                      + "] cannot be renamed or moved while it contains documents"));
+                          return;
+                        }
+                        listener.onResponse(null);
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  private void ensureFolderHasChildren(FolderRecord folder, ActionListener<Boolean> listener) {
+    BoolQueryBuilder query =
+        activeResourceFilter(Constants.FOLDER_RESOURCE_TYPE)
+            .must(
+                QueryBuilders.boolQuery()
+                    .should(QueryBuilders.termQuery("parent_id", folder.getId()))
+                    .should(QueryBuilders.prefixQuery("path.keyword", folder.getPath() + "/"))
+                    .minimumShouldMatch(1));
+    pluginClient.search(
+        new SearchRequest(Constants.DOCS_INDEX)
+            .source(new SearchSourceBuilder().size(1).query(query)),
+        ActionListener.wrap(
+            response -> listener.onResponse(response.getHits().getHits().length > 0),
+            listener::onFailure));
+  }
+
+  private void ensureFolderHasNoChildren(FolderRecord folder, ActionListener<Boolean> listener) {
+    ensureFolderHasChildren(folder, listener);
+  }
+
+  private void ensureFolderHasDocuments(String folderPath, ActionListener<Boolean> listener) {
+    QueryBuilder folderPathQuery =
+        QueryBuilders.boolQuery()
+            .should(QueryBuilders.termQuery("folder_path", folderPath))
+            .should(QueryBuilders.prefixQuery("folder_path", folderPath + "/"))
+            .minimumShouldMatch(1);
+    BoolQueryBuilder query =
+        activeResourceFilter(Constants.DOC_RESOURCE_TYPE).must(folderPathQuery);
+    pluginClient.search(
+        new SearchRequest(Constants.DOCS_INDEX)
+            .source(new SearchSourceBuilder().size(1).query(query)),
+        ActionListener.wrap(
+            response -> listener.onResponse(response.getHits().getHits().length > 0),
+            listener::onFailure));
+  }
+
+  private String buildFolderPath(FolderRecord parent, String folderName) {
+    String normalizedName = folderName == null ? "" : folderName.trim();
+    if (parent == null) {
+      return normalizedName;
+    }
+    return parent.getPath() + "/" + normalizedName;
+  }
+
+  private boolean isNestedPath(String candidateParentPath, String folderPath) {
+    return candidateParentPath.equals(folderPath)
+        || candidateParentPath.startsWith(folderPath + "/");
+  }
+
+  private BoolQueryBuilder activeResourceFilter(String resourceType) {
+    return QueryBuilders.boolQuery()
+        .must(QueryBuilders.termQuery("resource_type", resourceType))
+        .mustNot(QueryBuilders.termQuery("is_deleted", true));
+  }
+
   private String toSource(DocumentRecord document) {
     return """
             {
@@ -455,7 +1029,8 @@ public class DocumentIndexService {
               "all_shared_principals": %s,
               "title": %s,
               "content": %s,
-              "folder": %s,
+              "folder_id": %s,
+              "folder_path": %s,
               "owner": %s,
               "last_updated_by": %s,
               "created_at": %d,
@@ -470,7 +1045,8 @@ public class DocumentIndexService {
             quoteArray(document.getAllSharedPrincipals()),
             quote(document.getTitle()),
             quote(document.getContent()),
-            quote(document.getFolder()),
+            quote(document.getFolderId()),
+            quote(document.getFolderPath()),
             quote(document.getOwner()),
             quote(document.getLastUpdatedBy()),
             document.getCreatedAt(),
@@ -480,6 +1056,38 @@ public class DocumentIndexService {
             quote(document.getDeletedBy()));
   }
 
+  private String toSource(FolderRecord folder) {
+    return """
+            {
+              "resource_type": %s,
+              "all_shared_principals": %s,
+              "name": %s,
+              "path": %s,
+              "parent_id": %s,
+              "owner": %s,
+              "last_updated_by": %s,
+              "created_at": %d,
+              "updated_at": %d,
+              "is_deleted": %s,
+              "deleted_at": %d,
+              "deleted_by": %s
+            }
+            """
+        .formatted(
+            quote(folder.getResourceType()),
+            quoteArray(folder.getAllSharedPrincipals()),
+            quote(folder.getName()),
+            quote(folder.getPath()),
+            quote(folder.getParentId()),
+            quote(folder.getOwner()),
+            quote(folder.getLastUpdatedBy()),
+            folder.getCreatedAt(),
+            folder.getUpdatedAt(),
+            folder.isDeleted(),
+            folder.getDeletedAt(),
+            quote(folder.getDeletedBy()));
+  }
+
   private String quote(String value) {
     String sanitized =
         value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
@@ -487,8 +1095,6 @@ public class DocumentIndexService {
   }
 
   private String quoteArray(List<String> values) {
-    return values.stream()
-        .map(this::quote)
-        .collect(java.util.stream.Collectors.joining(", ", "[", "]"));
+    return values.stream().map(this::quote).collect(Collectors.joining(", ", "[", "]"));
   }
 }

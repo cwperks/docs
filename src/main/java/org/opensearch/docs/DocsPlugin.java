@@ -27,16 +27,28 @@ import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.docs.action.DeleteDocumentAction;
 import org.opensearch.docs.action.DeleteDocumentTransportAction;
+import org.opensearch.docs.action.DeleteFolderAction;
+import org.opensearch.docs.action.DeleteFolderTransportAction;
 import org.opensearch.docs.action.GetDocumentAction;
 import org.opensearch.docs.action.GetDocumentTransportAction;
+import org.opensearch.docs.action.GetFolderAction;
+import org.opensearch.docs.action.GetFolderTransportAction;
 import org.opensearch.docs.action.ListDocumentsAction;
 import org.opensearch.docs.action.ListDocumentsTransportAction;
+import org.opensearch.docs.action.ListFoldersAction;
+import org.opensearch.docs.action.ListFoldersTransportAction;
 import org.opensearch.docs.action.UpsertDocumentAction;
 import org.opensearch.docs.action.UpsertDocumentTransportAction;
+import org.opensearch.docs.action.UpsertFolderAction;
+import org.opensearch.docs.action.UpsertFolderTransportAction;
 import org.opensearch.docs.rest.DeleteDocumentRestAction;
+import org.opensearch.docs.rest.DeleteFolderRestAction;
 import org.opensearch.docs.rest.GetDocumentRestAction;
+import org.opensearch.docs.rest.GetFolderRestAction;
 import org.opensearch.docs.rest.ListDocumentsRestAction;
+import org.opensearch.docs.rest.ListFoldersRestAction;
 import org.opensearch.docs.rest.UpsertDocumentRestAction;
+import org.opensearch.docs.rest.UpsertFolderRestAction;
 import org.opensearch.docs.service.DocumentIndexService;
 import org.opensearch.docs.service.PluginClient;
 import org.opensearch.env.Environment;
@@ -95,9 +107,13 @@ public class DocsPlugin extends Plugin
       Supplier<DiscoveryNodes> nodesInCluster) {
     List<RestHandler> handlers = new ArrayList<>();
     handlers.add(new ListDocumentsRestAction());
+    handlers.add(new ListFoldersRestAction());
     handlers.add(new GetDocumentRestAction());
+    handlers.add(new GetFolderRestAction());
     handlers.add(new UpsertDocumentRestAction());
+    handlers.add(new UpsertFolderRestAction());
     handlers.add(new DeleteDocumentRestAction());
+    handlers.add(new DeleteFolderRestAction());
     return handlers;
   }
 
@@ -107,11 +123,17 @@ public class DocsPlugin extends Plugin
         new ArrayList<>();
     actions.add(
         new ActionHandler<>(ListDocumentsAction.INSTANCE, ListDocumentsTransportAction.class));
+    actions.add(new ActionHandler<>(ListFoldersAction.INSTANCE, ListFoldersTransportAction.class));
     actions.add(new ActionHandler<>(GetDocumentAction.INSTANCE, GetDocumentTransportAction.class));
+    actions.add(new ActionHandler<>(GetFolderAction.INSTANCE, GetFolderTransportAction.class));
     actions.add(
         new ActionHandler<>(UpsertDocumentAction.INSTANCE, UpsertDocumentTransportAction.class));
     actions.add(
+        new ActionHandler<>(UpsertFolderAction.INSTANCE, UpsertFolderTransportAction.class));
+    actions.add(
         new ActionHandler<>(DeleteDocumentAction.INSTANCE, DeleteDocumentTransportAction.class));
+    actions.add(
+        new ActionHandler<>(DeleteFolderAction.INSTANCE, DeleteFolderTransportAction.class));
     return actions;
   }
 

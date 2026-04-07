@@ -16,41 +16,37 @@ import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 
-public class DocumentSummary implements Writeable, ToXContentObject {
+public class FolderSummary implements Writeable, ToXContentObject {
   private final String id;
-  private final String title;
-  private final String folderId;
-  private final String folderPath;
-  private final String excerpt;
+  private final String name;
+  private final String path;
+  private final String parentId;
   private final String lastUpdatedBy;
   private final long updatedAt;
   private final long seqNo;
   private final long primaryTerm;
 
-  public DocumentSummary(
+  public FolderSummary(
       String id,
-      String title,
-      String folderId,
-      String folderPath,
-      String excerpt,
+      String name,
+      String path,
+      String parentId,
       String lastUpdatedBy,
       long updatedAt,
       long seqNo,
       long primaryTerm) {
     this.id = id;
-    this.title = title;
-    this.folderId = folderId;
-    this.folderPath = folderPath;
-    this.excerpt = excerpt;
+    this.name = name;
+    this.path = path;
+    this.parentId = parentId;
     this.lastUpdatedBy = lastUpdatedBy;
     this.updatedAt = updatedAt;
     this.seqNo = seqNo;
     this.primaryTerm = primaryTerm;
   }
 
-  public DocumentSummary(StreamInput in) throws IOException {
+  public FolderSummary(StreamInput in) throws IOException {
     this(
-        in.readString(),
         in.readString(),
         in.readString(),
         in.readString(),
@@ -64,10 +60,9 @@ public class DocumentSummary implements Writeable, ToXContentObject {
   @Override
   public void writeTo(StreamOutput out) throws IOException {
     out.writeString(id);
-    out.writeString(title);
-    out.writeString(folderId);
-    out.writeString(folderPath);
-    out.writeString(excerpt);
+    out.writeString(name);
+    out.writeString(path);
+    out.writeString(parentId);
     out.writeString(lastUpdatedBy);
     out.writeLong(updatedAt);
     out.writeLong(seqNo);
@@ -78,10 +73,9 @@ public class DocumentSummary implements Writeable, ToXContentObject {
   public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
     builder.startObject();
     builder.field("id", id);
-    builder.field("title", title);
-    builder.field("folderId", folderId);
-    builder.field("folderPath", folderPath);
-    builder.field("excerpt", excerpt);
+    builder.field("name", name);
+    builder.field("path", path);
+    builder.field("parentId", parentId);
     builder.field("lastUpdatedBy", lastUpdatedBy);
     builder.field("updatedAt", updatedAt);
     builder.field("seqNo", seqNo);

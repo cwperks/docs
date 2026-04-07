@@ -19,14 +19,13 @@ import org.opensearch.core.xcontent.ToXContentObject;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.docs.Constants;
 
-public class DocumentRecord implements Writeable, ToXContentObject {
+public class FolderRecord implements Writeable, ToXContentObject {
   private final String id;
   private final String resourceType;
   private final List<String> allSharedPrincipals;
-  private final String title;
-  private final String content;
-  private final String folderId;
-  private final String folderPath;
+  private final String name;
+  private final String path;
+  private final String parentId;
   private final String owner;
   private final String lastUpdatedBy;
   private final long createdAt;
@@ -37,14 +36,13 @@ public class DocumentRecord implements Writeable, ToXContentObject {
   private final long seqNo;
   private final long primaryTerm;
 
-  public DocumentRecord(
+  public FolderRecord(
       String id,
       String resourceType,
       List<String> allSharedPrincipals,
-      String title,
-      String content,
-      String folderId,
-      String folderPath,
+      String name,
+      String path,
+      String parentId,
       String owner,
       String lastUpdatedBy,
       long createdAt,
@@ -57,10 +55,9 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     this.id = id;
     this.resourceType = resourceType;
     this.allSharedPrincipals = List.copyOf(allSharedPrincipals);
-    this.title = title;
-    this.content = content;
-    this.folderId = folderId == null ? "" : folderId;
-    this.folderPath = folderPath == null ? "" : folderPath;
+    this.name = name;
+    this.path = path;
+    this.parentId = parentId == null ? "" : parentId;
     this.owner = owner;
     this.lastUpdatedBy = lastUpdatedBy;
     this.createdAt = createdAt;
@@ -72,12 +69,11 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     this.primaryTerm = primaryTerm;
   }
 
-  public DocumentRecord(StreamInput in) throws IOException {
+  public FolderRecord(StreamInput in) throws IOException {
     this(
         in.readString(),
         in.readString(),
         in.readStringList(),
-        in.readString(),
         in.readString(),
         in.readString(),
         in.readString(),
@@ -104,20 +100,16 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     return allSharedPrincipals;
   }
 
-  public String getTitle() {
-    return title;
+  public String getName() {
+    return name;
   }
 
-  public String getContent() {
-    return content;
+  public String getPath() {
+    return path;
   }
 
-  public String getFolderId() {
-    return folderId;
-  }
-
-  public String getFolderPath() {
-    return folderPath;
+  public String getParentId() {
+    return parentId;
   }
 
   public String getOwner() {
@@ -156,11 +148,9 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     return primaryTerm;
   }
 
-  public DocumentSummary toSummary() {
-    String normalized = content == null ? "" : content.replaceAll("\\s+", " ").trim();
-    String excerpt = normalized.length() > 180 ? normalized.substring(0, 180) + "..." : normalized;
-    return new DocumentSummary(
-        id, title, folderId, folderPath, excerpt, lastUpdatedBy, updatedAt, seqNo, primaryTerm);
+  public FolderSummary toSummary() {
+    return new FolderSummary(
+        id, name, path, parentId, lastUpdatedBy, updatedAt, seqNo, primaryTerm);
   }
 
   @Override
@@ -168,10 +158,9 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     out.writeString(id);
     out.writeString(resourceType);
     out.writeStringCollection(allSharedPrincipals);
-    out.writeString(title);
-    out.writeString(content);
-    out.writeString(folderId);
-    out.writeString(folderPath);
+    out.writeString(name);
+    out.writeString(path);
+    out.writeString(parentId);
     out.writeString(owner);
     out.writeString(lastUpdatedBy);
     out.writeLong(createdAt);
@@ -189,10 +178,9 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     builder.field("id", id);
     builder.field("resourceType", resourceType);
     builder.field("allSharedPrincipals", allSharedPrincipals);
-    builder.field("title", title);
-    builder.field("content", content);
-    builder.field("folderId", folderId);
-    builder.field("folderPath", folderPath);
+    builder.field("name", name);
+    builder.field("path", path);
+    builder.field("parentId", parentId);
     builder.field("owner", owner);
     builder.field("lastUpdatedBy", lastUpdatedBy);
     builder.field("createdAt", createdAt);
@@ -206,16 +194,15 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     return builder;
   }
 
-  public static DocumentRecord fromSource(
+  public static FolderRecord fromSource(
       String id, long seqNo, long primaryTerm, Map<String, Object> source) {
-    return new DocumentRecord(
+    return new FolderRecord(
         id,
-        valueAsString(source.getOrDefault("resource_type", Constants.DOC_RESOURCE_TYPE)),
+        valueAsString(source.getOrDefault("resource_type", Constants.FOLDER_RESOURCE_TYPE)),
         valueAsStringList(source.get("all_shared_principals")),
-        valueAsString(source.get("title")),
-        valueAsString(source.get("content")),
-        valueAsString(source.get("folder_id")),
-        valueAsString(source.get("folder_path")),
+        valueAsString(source.get("name")),
+        valueAsString(source.get("path")),
+        valueAsString(source.get("parent_id")),
         valueAsString(source.get("owner")),
         valueAsString(source.get("last_updated_by")),
         valueAsLong(source.get("created_at")),

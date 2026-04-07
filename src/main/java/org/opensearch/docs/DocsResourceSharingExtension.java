@@ -33,6 +33,22 @@ public class DocsResourceSharingExtension implements ResourceSharingExtension {
           public String typeField() {
             return "resource_type";
           }
+        },
+        new ResourceProvider() {
+          @Override
+          public String resourceType() {
+            return Constants.FOLDER_RESOURCE_TYPE;
+          }
+
+          @Override
+          public String resourceIndexName() {
+            return Constants.DOCS_INDEX;
+          }
+
+          @Override
+          public String typeField() {
+            return "resource_type";
+          }
         });
   }
 

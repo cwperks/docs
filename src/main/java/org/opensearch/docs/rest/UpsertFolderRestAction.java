@@ -17,24 +17,24 @@ import java.util.List;
 import java.util.Map;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.docs.Constants;
-import org.opensearch.docs.action.UpsertDocumentAction;
-import org.opensearch.docs.action.UpsertDocumentRequest;
+import org.opensearch.docs.action.UpsertFolderAction;
+import org.opensearch.docs.action.UpsertFolderRequest;
 import org.opensearch.rest.BaseRestHandler;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.rest.action.RestToXContentListener;
 import org.opensearch.transport.client.node.NodeClient;
 
-public class UpsertDocumentRestAction extends BaseRestHandler {
+public class UpsertFolderRestAction extends BaseRestHandler {
   @Override
   public List<Route> routes() {
     return List.of(
-        new Route(PUT, Constants.DOCUMENTS_API_PATH),
-        new Route(POST, Constants.DOCUMENTS_API_PATH + "/{document_id}"));
+        new Route(PUT, Constants.FOLDERS_API_PATH),
+        new Route(POST, Constants.FOLDERS_API_PATH + "/{folder_id}"));
   }
 
   @Override
   public String getName() {
-    return "docs_upsert_document";
+    return "docs_upsert_folder";
   }
 
   @Override
@@ -45,21 +45,19 @@ public class UpsertDocumentRestAction extends BaseRestHandler {
       source = parser.map();
     }
 
-    String title = source.get("title") == null ? null : source.get("title").toString();
-    String content = source.get("content") == null ? "" : source.get("content").toString();
-    String folderId = source.get("folderId") == null ? "" : source.get("folderId").toString();
+    String name = source.get("name") == null ? null : source.get("name").toString();
+    String parentId = source.get("parentId") == null ? "" : source.get("parentId").toString();
     Long seqNo =
         source.get("seqNo") instanceof Number ? ((Number) source.get("seqNo")).longValue() : null;
     Long primaryTerm =
         source.get("primaryTerm") instanceof Number
             ? ((Number) source.get("primaryTerm")).longValue()
             : null;
-    String documentId = request.param("document_id");
 
-    UpsertDocumentRequest actionRequest =
-        new UpsertDocumentRequest(documentId, title, content, folderId, seqNo, primaryTerm);
+    UpsertFolderRequest actionRequest =
+        new UpsertFolderRequest(request.param("folder_id"), name, parentId, seqNo, primaryTerm);
     return channel ->
         client.executeLocally(
-            UpsertDocumentAction.INSTANCE, actionRequest, new RestToXContentListener<>(channel));
+            UpsertFolderAction.INSTANCE, actionRequest, new RestToXContentListener<>(channel));
   }
 }

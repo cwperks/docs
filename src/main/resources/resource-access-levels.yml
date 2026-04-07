@@ -18,3 +18,22 @@ resource_types:
         - "docs:document/upsert"
         - "docs:document/delete"
         - "cluster:admin/security/resource/share"
+  docs-folder:
+    folders_read_only:
+      default: true
+      allowed_actions:
+        - "docs:folder/get"
+        - "docs:folder/list"
+    folders_read_write:
+      allowed_actions:
+        - "docs:folder/get"
+        - "docs:folder/list"
+        - "docs:folder/upsert"
+        - "docs:folder/delete"
+    folders_full_access:
+      allowed_actions:
+        - "docs:folder/get"
+        - "docs:folder/list"
+        - "docs:folder/upsert"
+        - "docs:folder/delete"
+        - "cluster:admin/security/resource/share"
