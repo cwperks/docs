@@ -1,0 +1,29 @@
+{
+  "dynamic": "strict",
+  "properties": {
+    "title": {
+      "type": "text",
+      "fields": {
+        "keyword": {
+          "type": "keyword",
+          "ignore_above": 256
+        }
+      }
+    },
+    "content": {
+      "type": "text"
+    },
+    "owner": {
+      "type": "keyword"
+    },
+    "last_updated_by": {
+      "type": "keyword"
+    },
+    "created_at": {
+      "type": "date"
+    },
+    "updated_at": {
+      "type": "date"
+    }
+  }
+}

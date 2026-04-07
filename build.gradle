@@ -1,0 +1,79 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+buildscript {
+    ext {
+        opensearch_group = "org.opensearch"
+        isSnapshot = "true" == System.getProperty("build.snapshot", "true")
+        opensearch_version = System.getProperty("opensearch.version", "3.7.0-SNAPSHOT")
+        buildVersionQualifier = System.getProperty("build.version_qualifier", "")
+        version_tokens = opensearch_version.tokenize('-')
+        opensearch_build = version_tokens[0] + '.0'
+        if (buildVersionQualifier) {
+            opensearch_build += "-${buildVersionQualifier}"
+        }
+        if (isSnapshot) {
+            opensearch_build += "-SNAPSHOT"
+        }
+        common_utils_version = System.getProperty("common_utils.version", opensearch_build)
+    }
+
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        maven { url "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
+    }
+
+    dependencies {
+        classpath "${opensearch_group}.gradle:build-tools:${opensearch_version}"
+    }
+}
+
+plugins {
+    id 'java-library'
+}
+
+apply plugin: 'opensearch.opensearchplugin'
+apply plugin: 'opensearch.pluginzip'
+
+group = "org.opensearch"
+version = "${opensearch_build}"
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+opensearchplugin {
+    name 'opensearch-docs'
+    description 'Collaborative documents plugin for OpenSearch and OpenSearch Dashboards'
+    classname 'org.opensearch.docs.DocsPlugin'
+    extendedPlugins = ['opensearch-security;optional=true']
+}
+
+ext {
+    licenseFile = rootProject.file('LICENSE.txt')
+    noticeFile = rootProject.file('NOTICE.txt')
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
+}
+
+dependencies {
+    implementation "org.opensearch:common-utils:${common_utils_version}"
+}
+
+dependencyLicenses.enabled = false
+thirdPartyAudit.enabled = false
+loggerUsageCheck.enabled = false
+validateNebulaPom.enabled = false
+testingConventions.enabled = false
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

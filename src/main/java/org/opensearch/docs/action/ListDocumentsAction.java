@@ -1,0 +1,17 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package org.opensearch.docs.action;
+
+import org.opensearch.action.ActionType;
+
+public class ListDocumentsAction extends ActionType<ListDocumentsResponse> {
+    public static final String NAME = "cluster:admin/opensearch/docs/document/list";
+    public static final ListDocumentsAction INSTANCE = new ListDocumentsAction();
+
+    private ListDocumentsAction() {
+        super(NAME, ListDocumentsResponse::new);
+    }
+}
