@@ -25,6 +25,7 @@ public class DocumentRecord implements Writeable, ToXContentObject {
   private final List<String> allSharedPrincipals;
   private final String title;
   private final String content;
+  private final String folder;
   private final String owner;
   private final String lastUpdatedBy;
   private final long createdAt;
@@ -41,6 +42,7 @@ public class DocumentRecord implements Writeable, ToXContentObject {
       List<String> allSharedPrincipals,
       String title,
       String content,
+      String folder,
       String owner,
       String lastUpdatedBy,
       long createdAt,
@@ -55,6 +57,7 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     this.allSharedPrincipals = List.copyOf(allSharedPrincipals);
     this.title = title;
     this.content = content;
+    this.folder = folder == null ? "" : folder;
     this.owner = owner;
     this.lastUpdatedBy = lastUpdatedBy;
     this.createdAt = createdAt;
@@ -71,6 +74,7 @@ public class DocumentRecord implements Writeable, ToXContentObject {
         in.readString(),
         in.readString(),
         in.readStringList(),
+        in.readString(),
         in.readString(),
         in.readString(),
         in.readString(),
@@ -102,6 +106,10 @@ public class DocumentRecord implements Writeable, ToXContentObject {
 
   public String getContent() {
     return content;
+  }
+
+  public String getFolder() {
+    return folder;
   }
 
   public String getOwner() {
@@ -143,7 +151,8 @@ public class DocumentRecord implements Writeable, ToXContentObject {
   public DocumentSummary toSummary() {
     String normalized = content == null ? "" : content.replaceAll("\\s+", " ").trim();
     String excerpt = normalized.length() > 180 ? normalized.substring(0, 180) + "..." : normalized;
-    return new DocumentSummary(id, title, excerpt, lastUpdatedBy, updatedAt, seqNo, primaryTerm);
+    return new DocumentSummary(
+        id, title, folder, excerpt, lastUpdatedBy, updatedAt, seqNo, primaryTerm);
   }
 
   @Override
@@ -153,6 +162,7 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     out.writeStringCollection(allSharedPrincipals);
     out.writeString(title);
     out.writeString(content);
+    out.writeString(folder);
     out.writeString(owner);
     out.writeString(lastUpdatedBy);
     out.writeLong(createdAt);
@@ -172,6 +182,7 @@ public class DocumentRecord implements Writeable, ToXContentObject {
     builder.field("allSharedPrincipals", allSharedPrincipals);
     builder.field("title", title);
     builder.field("content", content);
+    builder.field("folder", folder);
     builder.field("owner", owner);
     builder.field("lastUpdatedBy", lastUpdatedBy);
     builder.field("createdAt", createdAt);
@@ -193,6 +204,7 @@ public class DocumentRecord implements Writeable, ToXContentObject {
         valueAsStringList(source.get("all_shared_principals")),
         valueAsString(source.get("title")),
         valueAsString(source.get("content")),
+        valueAsString(source.get("folder")),
         valueAsString(source.get("owner")),
         valueAsString(source.get("last_updated_by")),
         valueAsLong(source.get("created_at")),

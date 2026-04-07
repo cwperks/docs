@@ -24,14 +24,21 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
   private final String documentId;
   private final String title;
   private final String content;
+  private final String folder;
   private final Long seqNo;
   private final Long primaryTerm;
 
   public UpsertDocumentRequest(
-      String documentId, String title, String content, Long seqNo, Long primaryTerm) {
+      String documentId,
+      String title,
+      String content,
+      String folder,
+      Long seqNo,
+      Long primaryTerm) {
     this.documentId = documentId;
     this.title = title;
     this.content = content;
+    this.folder = folder == null ? "" : folder.trim();
     this.seqNo = seqNo;
     this.primaryTerm = primaryTerm;
   }
@@ -41,6 +48,7 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
     this.documentId = in.readOptionalString();
     this.title = in.readString();
     this.content = in.readString();
+    this.folder = in.readString();
     this.seqNo = in.readOptionalLong();
     this.primaryTerm = in.readOptionalLong();
   }
@@ -55,6 +63,10 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
 
   public String getContent() {
     return content;
+  }
+
+  public String getFolder() {
+    return folder;
   }
 
   public long getSeqNo() {
@@ -104,6 +116,7 @@ public class UpsertDocumentRequest extends ActionRequest implements DocRequest {
     out.writeOptionalString(documentId);
     out.writeString(title);
     out.writeString(content);
+    out.writeString(folder);
     out.writeOptionalLong(seqNo);
     out.writeOptionalLong(primaryTerm);
   }

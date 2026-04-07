@@ -47,6 +47,7 @@ public class UpsertDocumentRestAction extends BaseRestHandler {
 
     String title = source.get("title") == null ? null : source.get("title").toString();
     String content = source.get("content") == null ? "" : source.get("content").toString();
+    String folder = source.get("folder") == null ? "" : source.get("folder").toString();
     Long seqNo =
         source.get("seqNo") instanceof Number ? ((Number) source.get("seqNo")).longValue() : null;
     Long primaryTerm =
@@ -56,7 +57,7 @@ public class UpsertDocumentRestAction extends BaseRestHandler {
     String documentId = request.param("document_id");
 
     UpsertDocumentRequest actionRequest =
-        new UpsertDocumentRequest(documentId, title, content, seqNo, primaryTerm);
+        new UpsertDocumentRequest(documentId, title, content, folder, seqNo, primaryTerm);
     return channel ->
         client.executeLocally(
             UpsertDocumentAction.INSTANCE, actionRequest, new RestToXContentListener<>(channel));

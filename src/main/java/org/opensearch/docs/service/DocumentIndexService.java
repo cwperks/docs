@@ -186,12 +186,13 @@ public class DocumentIndexService {
 
                         long now = Instant.now().toEpochMilli();
                         DocumentRecord deleted =
-                            new DocumentRecord(
+                        new DocumentRecord(
                                 existing.getId(),
                                 existing.getResourceType(),
                                 existing.getAllSharedPrincipals(),
                                 existing.getTitle(),
                                 existing.getContent(),
+                                existing.getFolder(),
                                 existing.getOwner(),
                                 actor,
                                 existing.getCreatedAt(),
@@ -238,6 +239,7 @@ public class DocumentIndexService {
             List.of(),
             request.getTitle(),
             request.getContent(),
+            request.getFolder(),
             actor,
             actor,
             now,
@@ -269,6 +271,7 @@ public class DocumentIndexService {
                             document.getAllSharedPrincipals(),
                             document.getTitle(),
                             document.getContent(),
+                            document.getFolder(),
                             document.getOwner(),
                             document.getLastUpdatedBy(),
                             document.getCreatedAt(),
@@ -315,6 +318,7 @@ public class DocumentIndexService {
                       existing.getAllSharedPrincipals(),
                       request.getTitle(),
                       request.getContent(),
+                      request.getFolder(),
                       existing.getOwner(),
                       actor,
                       existing.getCreatedAt(),
@@ -348,6 +352,7 @@ public class DocumentIndexService {
                                       updated.getAllSharedPrincipals(),
                                       updated.getTitle(),
                                       updated.getContent(),
+                                      updated.getFolder(),
                                       updated.getOwner(),
                                       updated.getLastUpdatedBy(),
                                       updated.getCreatedAt(),
@@ -450,6 +455,7 @@ public class DocumentIndexService {
               "all_shared_principals": %s,
               "title": %s,
               "content": %s,
+              "folder": %s,
               "owner": %s,
               "last_updated_by": %s,
               "created_at": %d,
@@ -464,6 +470,7 @@ public class DocumentIndexService {
             quoteArray(document.getAllSharedPrincipals()),
             quote(document.getTitle()),
             quote(document.getContent()),
+            quote(document.getFolder()),
             quote(document.getOwner()),
             quote(document.getLastUpdatedBy()),
             document.getCreatedAt(),

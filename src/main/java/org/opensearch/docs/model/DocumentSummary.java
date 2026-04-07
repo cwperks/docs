@@ -19,6 +19,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 public class DocumentSummary implements Writeable, ToXContentObject {
   private final String id;
   private final String title;
+  private final String folder;
   private final String excerpt;
   private final String lastUpdatedBy;
   private final long updatedAt;
@@ -28,6 +29,7 @@ public class DocumentSummary implements Writeable, ToXContentObject {
   public DocumentSummary(
       String id,
       String title,
+      String folder,
       String excerpt,
       String lastUpdatedBy,
       long updatedAt,
@@ -35,6 +37,7 @@ public class DocumentSummary implements Writeable, ToXContentObject {
       long primaryTerm) {
     this.id = id;
     this.title = title;
+    this.folder = folder;
     this.excerpt = excerpt;
     this.lastUpdatedBy = lastUpdatedBy;
     this.updatedAt = updatedAt;
@@ -48,6 +51,7 @@ public class DocumentSummary implements Writeable, ToXContentObject {
         in.readString(),
         in.readString(),
         in.readString(),
+        in.readString(),
         in.readLong(),
         in.readLong(),
         in.readLong());
@@ -57,6 +61,7 @@ public class DocumentSummary implements Writeable, ToXContentObject {
   public void writeTo(StreamOutput out) throws IOException {
     out.writeString(id);
     out.writeString(title);
+    out.writeString(folder);
     out.writeString(excerpt);
     out.writeString(lastUpdatedBy);
     out.writeLong(updatedAt);
@@ -69,6 +74,7 @@ public class DocumentSummary implements Writeable, ToXContentObject {
     builder.startObject();
     builder.field("id", id);
     builder.field("title", title);
+    builder.field("folder", folder);
     builder.field("excerpt", excerpt);
     builder.field("lastUpdatedBy", lastUpdatedBy);
     builder.field("updatedAt", updatedAt);

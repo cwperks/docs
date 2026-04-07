@@ -19,6 +19,9 @@
     "content": {
       "type": "text"
     },
+    "folder": {
+      "type": "keyword"
+    },
     "owner": {
       "type": "keyword"
     },
