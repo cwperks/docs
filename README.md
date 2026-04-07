@@ -27,6 +27,7 @@ All OpenSearch endpoints are rooted at `/_plugins/_docs`.
 - `GET /_plugins/_docs/documents/{document_id}`
 - `PUT /_plugins/_docs/documents`
 - `POST /_plugins/_docs/documents/{document_id}`
+- `DELETE /_plugins/_docs/documents/{document_id}?seqNo={seqNo}&primaryTerm={primaryTerm}`
 
 Create and update payloads currently accept:
 
@@ -41,6 +42,8 @@ Create and update payloads currently accept:
 
 `seqNo` and `primaryTerm` are optional on create and required on update.
 
+Deletes also require `seqNo` and `primaryTerm` so the UI can avoid removing a stale revision.
+
 ## System Index
 
 Documents are stored in the `.opensearch-docs` system index. The first write lazily creates the index with a simple mapping optimized for the initial demo.
@@ -48,6 +51,6 @@ Documents are stored in the `.opensearch-docs` system index. The first write laz
 ## Next Steps
 
 - Register the document resource type with the security plugin’s sharing extensibility APIs.
-- Add document delete/archive flows.
+- Add document archive flows.
 - Add richer markdown features and slash-command style editing affordances.
 - Add real presence indicators if we want a more live-collaboration demo later.

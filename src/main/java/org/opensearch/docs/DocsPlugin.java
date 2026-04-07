@@ -25,12 +25,15 @@ import org.opensearch.common.settings.SettingsFilter;
 import org.opensearch.core.action.ActionResponse;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.docs.action.DeleteDocumentAction;
+import org.opensearch.docs.action.DeleteDocumentTransportAction;
 import org.opensearch.docs.action.GetDocumentAction;
 import org.opensearch.docs.action.GetDocumentTransportAction;
 import org.opensearch.docs.action.ListDocumentsAction;
 import org.opensearch.docs.action.ListDocumentsTransportAction;
 import org.opensearch.docs.action.UpsertDocumentAction;
 import org.opensearch.docs.action.UpsertDocumentTransportAction;
+import org.opensearch.docs.rest.DeleteDocumentRestAction;
 import org.opensearch.docs.rest.GetDocumentRestAction;
 import org.opensearch.docs.rest.ListDocumentsRestAction;
 import org.opensearch.docs.rest.UpsertDocumentRestAction;
@@ -94,6 +97,7 @@ public class DocsPlugin extends Plugin
     handlers.add(new ListDocumentsRestAction());
     handlers.add(new GetDocumentRestAction());
     handlers.add(new UpsertDocumentRestAction());
+    handlers.add(new DeleteDocumentRestAction());
     return handlers;
   }
 
@@ -106,6 +110,8 @@ public class DocsPlugin extends Plugin
     actions.add(new ActionHandler<>(GetDocumentAction.INSTANCE, GetDocumentTransportAction.class));
     actions.add(
         new ActionHandler<>(UpsertDocumentAction.INSTANCE, UpsertDocumentTransportAction.class));
+    actions.add(
+        new ActionHandler<>(DeleteDocumentAction.INSTANCE, DeleteDocumentTransportAction.class));
     return actions;
   }
 

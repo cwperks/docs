@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.DocWriteResponse;
+import org.opensearch.action.delete.DeleteRequest;
 import org.opensearch.action.get.GetRequest;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.search.SearchRequest;
@@ -27,6 +28,8 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.docs.Constants;
+import org.opensearch.docs.action.DeleteDocumentRequest;
+import org.opensearch.docs.action.DeleteDocumentResponse;
 import org.opensearch.docs.action.GetDocumentResponse;
 import org.opensearch.docs.action.ListDocumentsResponse;
 import org.opensearch.docs.action.UpsertDocumentRequest;
@@ -139,6 +142,42 @@ public class DocumentIndexService {
                 return;
               }
               updateDocument(request, actor, listener);
+            },
+            listener::onFailure));
+  }
+
+  public void deleteDocument(
+      DeleteDocumentRequest request, ActionListener<DeleteDocumentResponse> listener) {
+    indexExists(
+        ActionListener.wrap(
+            exists -> {
+              if (exists == false) {
+                listener.onFailure(
+                    new ResourceNotFoundException(
+                        "Document [" + request.getDocumentId() + "] does not exist"));
+                return;
+              }
+
+              DeleteRequest deleteRequest =
+                  new DeleteRequest(Constants.DOCS_INDEX, request.getDocumentId())
+                      .setIfSeqNo(request.getSeqNo())
+                      .setIfPrimaryTerm(request.getPrimaryTerm())
+                      .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE);
+
+              pluginClient.delete(
+                  deleteRequest,
+                  ActionListener.wrap(
+                      response -> {
+                        if (response.getResult() == DocWriteResponse.Result.NOT_FOUND) {
+                          listener.onFailure(
+                              new ResourceNotFoundException(
+                                  "Document [" + request.getDocumentId() + "] does not exist"));
+                          return;
+                        }
+
+                        listener.onResponse(new DeleteDocumentResponse(true, response.getId()));
+                      },
+                      listener::onFailure));
             },
             listener::onFailure));
   }
