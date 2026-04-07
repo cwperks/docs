@@ -67,6 +67,7 @@ repositories {
 
 dependencies {
     implementation "org.opensearch:common-utils:${common_utils_version}"
+    compileOnly files("../security/spi/build/libs/opensearch-security-spi-${opensearch_build}.jar")
 }
 
 spotless {

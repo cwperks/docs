@@ -1,0 +1,20 @@
+resource_types:
+  docs-document:
+    docs_read_only:
+      default: true
+      allowed_actions:
+        - "docs:document/get"
+        - "docs:document/list"
+    docs_read_write:
+      allowed_actions:
+        - "docs:document/get"
+        - "docs:document/list"
+        - "docs:document/upsert"
+        - "docs:document/delete"
+    docs_full_access:
+      allowed_actions:
+        - "docs:document/get"
+        - "docs:document/list"
+        - "docs:document/upsert"
+        - "docs:document/delete"
+        - "cluster:admin/security/resource/share"

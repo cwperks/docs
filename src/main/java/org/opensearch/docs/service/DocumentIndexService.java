@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.opensearch.ResourceNotFoundException;
 import org.opensearch.action.DocWriteResponse;
-import org.opensearch.action.delete.DeleteRequest;
 import org.opensearch.action.get.GetRequest;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.search.SearchRequest;
@@ -61,15 +60,17 @@ public class DocumentIndexService {
 
               SearchSourceBuilder sourceBuilder =
                   new SearchSourceBuilder().size(size).sort("updated_at", SortOrder.DESC);
+              BoolQueryBuilder visibilityFilter =
+                  QueryBuilders.boolQuery().mustNot(QueryBuilders.termQuery("is_deleted", true));
               if (query == null || query.isBlank()) {
-                sourceBuilder.query(QueryBuilders.matchAllQuery());
+                sourceBuilder.query(visibilityFilter.must(QueryBuilders.matchAllQuery()));
               } else {
                 BoolQueryBuilder boolQuery =
                     QueryBuilders.boolQuery()
                         .should(QueryBuilders.matchPhrasePrefixQuery("title", query).boost(4.0f))
                         .should(QueryBuilders.matchQuery("content", query))
                         .minimumShouldMatch(1);
-                sourceBuilder.query(boolQuery);
+                sourceBuilder.query(visibilityFilter.must(boolQuery));
               }
 
               SearchRequest searchRequest =
@@ -123,6 +124,12 @@ public class DocumentIndexService {
                                 response.getSeqNo(),
                                 response.getPrimaryTerm(),
                                 response.getSourceAsMap());
+                        if (document.isDeleted()) {
+                          listener.onFailure(
+                              new ResourceNotFoundException(
+                                  "Document [" + documentId + "] does not exist"));
+                          return;
+                        }
                         listener.onResponse(new GetDocumentResponse(document));
                       },
                       listener::onFailure));
@@ -134,7 +141,7 @@ public class DocumentIndexService {
       UpsertDocumentRequest request,
       String actor,
       ActionListener<UpsertDocumentResponse> listener) {
-    ensureIndexExists(
+    ensureIndexReady(
         ActionListener.wrap(
             ignored -> {
               if (request.getDocumentId() == null) {
@@ -147,35 +154,71 @@ public class DocumentIndexService {
   }
 
   public void deleteDocument(
-      DeleteDocumentRequest request, ActionListener<DeleteDocumentResponse> listener) {
-    indexExists(
+      DeleteDocumentRequest request,
+      String actor,
+      ActionListener<DeleteDocumentResponse> listener) {
+    ensureIndexReady(
         ActionListener.wrap(
-            exists -> {
-              if (exists == false) {
-                listener.onFailure(
-                    new ResourceNotFoundException(
-                        "Document [" + request.getDocumentId() + "] does not exist"));
-                return;
-              }
-
-              DeleteRequest deleteRequest =
-                  new DeleteRequest(Constants.DOCS_INDEX, request.getDocumentId())
-                      .setIfSeqNo(request.getSeqNo())
-                      .setIfPrimaryTerm(request.getPrimaryTerm())
-                      .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE);
-
-              pluginClient.delete(
-                  deleteRequest,
+            ignored -> {
+              pluginClient.get(
+                  new GetRequest(Constants.DOCS_INDEX, request.getDocumentId()),
                   ActionListener.wrap(
                       response -> {
-                        if (response.getResult() == DocWriteResponse.Result.NOT_FOUND) {
+                        if (response.isExists() == false) {
                           listener.onFailure(
                               new ResourceNotFoundException(
                                   "Document [" + request.getDocumentId() + "] does not exist"));
                           return;
                         }
 
-                        listener.onResponse(new DeleteDocumentResponse(true, response.getId()));
+                        DocumentRecord existing =
+                            DocumentRecord.fromSource(
+                                response.getId(),
+                                response.getSeqNo(),
+                                response.getPrimaryTerm(),
+                                response.getSourceAsMap());
+                        if (existing.isDeleted()) {
+                          listener.onFailure(
+                              new ResourceNotFoundException(
+                                  "Document [" + request.getDocumentId() + "] does not exist"));
+                          return;
+                        }
+
+                        long now = Instant.now().toEpochMilli();
+                        DocumentRecord deleted =
+                            new DocumentRecord(
+                                existing.getId(),
+                                existing.getResourceType(),
+                                existing.getAllSharedPrincipals(),
+                                existing.getTitle(),
+                                existing.getContent(),
+                                existing.getOwner(),
+                                actor,
+                                existing.getCreatedAt(),
+                                now,
+                                true,
+                                now,
+                                actor,
+                                request.getSeqNo(),
+                                request.getPrimaryTerm());
+
+                        IndexRequest indexRequest =
+                            pluginClient
+                                .prepareIndex(Constants.DOCS_INDEX)
+                                .setId(existing.getId())
+                                .setIfSeqNo(request.getSeqNo())
+                                .setIfPrimaryTerm(request.getPrimaryTerm())
+                                .setSource(toSource(deleted), XContentType.JSON)
+                                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                                .request();
+
+                        pluginClient.index(
+                            indexRequest,
+                            ActionListener.wrap(
+                                indexResponse ->
+                                    listener.onResponse(
+                                        new DeleteDocumentResponse(true, indexResponse.getId())),
+                                listener::onFailure));
                       },
                       listener::onFailure));
             },
@@ -190,7 +233,20 @@ public class DocumentIndexService {
     String documentId = UUID.randomUUID().toString();
     DocumentRecord document =
         new DocumentRecord(
-            documentId, request.getTitle(), request.getContent(), actor, actor, now, now, -1L, -1L);
+            documentId,
+            Constants.DOC_RESOURCE_TYPE,
+            List.of(),
+            request.getTitle(),
+            request.getContent(),
+            actor,
+            actor,
+            now,
+            now,
+            false,
+            0L,
+            "",
+            -1L,
+            -1L);
 
     IndexRequest indexRequest =
         pluginClient
@@ -209,12 +265,17 @@ public class DocumentIndexService {
                         response.getResult() == DocWriteResponse.Result.CREATED,
                         new DocumentRecord(
                             response.getId(),
+                            document.getResourceType(),
+                            document.getAllSharedPrincipals(),
                             document.getTitle(),
                             document.getContent(),
                             document.getOwner(),
                             document.getLastUpdatedBy(),
                             document.getCreatedAt(),
                             document.getUpdatedAt(),
+                            document.isDeleted(),
+                            document.getDeletedAt(),
+                            document.getDeletedBy(),
                             response.getSeqNo(),
                             response.getPrimaryTerm()))),
             listener::onFailure));
@@ -240,16 +301,27 @@ public class DocumentIndexService {
               DocumentRecord existing =
                   DocumentRecord.fromSource(
                       response.getId(), response.getSeqNo(), response.getPrimaryTerm(), source);
+              if (existing.isDeleted()) {
+                listener.onFailure(
+                    new ResourceNotFoundException(
+                        "Document [" + request.getDocumentId() + "] does not exist"));
+                return;
+              }
 
               DocumentRecord updated =
                   new DocumentRecord(
                       existing.getId(),
+                      existing.getResourceType(),
+                      existing.getAllSharedPrincipals(),
                       request.getTitle(),
                       request.getContent(),
                       existing.getOwner(),
                       actor,
                       existing.getCreatedAt(),
                       now,
+                      false,
+                      0L,
+                      "",
                       request.getSeqNo(),
                       request.getPrimaryTerm());
 
@@ -272,12 +344,17 @@ public class DocumentIndexService {
                                   indexResponse.getResult() == DocWriteResponse.Result.CREATED,
                                   new DocumentRecord(
                                       indexResponse.getId(),
+                                      updated.getResourceType(),
+                                      updated.getAllSharedPrincipals(),
                                       updated.getTitle(),
                                       updated.getContent(),
                                       updated.getOwner(),
                                       updated.getLastUpdatedBy(),
                                       updated.getCreatedAt(),
                                       updated.getUpdatedAt(),
+                                      updated.isDeleted(),
+                                      updated.getDeletedAt(),
+                                      updated.getDeletedBy(),
                                       indexResponse.getSeqNo(),
                                       indexResponse.getPrimaryTerm()))),
                       listener::onFailure));
@@ -285,12 +362,12 @@ public class DocumentIndexService {
             listener::onFailure));
   }
 
-  private void ensureIndexExists(ActionListener<Void> listener) {
+  private void ensureIndexReady(ActionListener<Void> listener) {
     indexExists(
         ActionListener.wrap(
             exists -> {
               if (exists) {
-                listener.onResponse(null);
+                ensureMappings(listener);
                 return;
               }
 
@@ -315,11 +392,32 @@ public class DocumentIndexService {
                                           + Constants.DOCS_INDEX));
                               return;
                             }
-                            listener.onResponse(null);
+                            ensureMappings(listener);
                           },
                           listener::onFailure));
             },
             listener::onFailure));
+  }
+
+  private void ensureMappings(ActionListener<Void> listener) {
+    String mappings = loadMappings();
+    pluginClient
+        .admin()
+        .indices()
+        .preparePutMapping(Constants.DOCS_INDEX)
+        .setSource(mappings, XContentType.JSON)
+        .execute(
+            ActionListener.wrap(
+                response -> {
+                  if (response.isAcknowledged() == false) {
+                    listener.onFailure(
+                        new IllegalStateException(
+                            "Put mapping was not acknowledged for " + Constants.DOCS_INDEX));
+                    return;
+                  }
+                  listener.onResponse(null);
+                },
+                listener::onFailure));
   }
 
   private void indexExists(ActionListener<Boolean> listener) {
@@ -348,26 +446,42 @@ public class DocumentIndexService {
   private String toSource(DocumentRecord document) {
     return """
             {
+              "resource_type": %s,
+              "all_shared_principals": %s,
               "title": %s,
               "content": %s,
               "owner": %s,
               "last_updated_by": %s,
               "created_at": %d,
-              "updated_at": %d
+              "updated_at": %d,
+              "is_deleted": %s,
+              "deleted_at": %d,
+              "deleted_by": %s
             }
             """
         .formatted(
+            quote(document.getResourceType()),
+            quoteArray(document.getAllSharedPrincipals()),
             quote(document.getTitle()),
             quote(document.getContent()),
             quote(document.getOwner()),
             quote(document.getLastUpdatedBy()),
             document.getCreatedAt(),
-            document.getUpdatedAt());
+            document.getUpdatedAt(),
+            document.isDeleted(),
+            document.getDeletedAt(),
+            quote(document.getDeletedBy()));
   }
 
   private String quote(String value) {
     String sanitized =
         value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
     return "\"" + sanitized + "\"";
+  }
+
+  private String quoteArray(List<String> values) {
+    return values.stream()
+        .map(this::quote)
+        .collect(java.util.stream.Collectors.joining(", ", "[", "]"));
   }
 }

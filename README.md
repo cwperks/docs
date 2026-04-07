@@ -43,10 +43,12 @@ Create and update payloads currently accept:
 `seqNo` and `primaryTerm` are optional on create and required on update.
 
 Deletes also require `seqNo` and `primaryTerm` so the UI can avoid removing a stale revision.
+The current implementation is a soft delete: the document is marked deleted and hidden from
+list/get flows rather than being physically removed from the system index.
 
 ## System Index
 
-Documents are stored in the `.opensearch-docs` system index. The first write lazily creates the index with a simple mapping optimized for the initial demo.
+Documents are stored in the `.opensearch-docs` system index. The first write lazily creates the index with a simple mapping optimized for the initial demo, including soft-delete metadata for future restore/archive flows.
 
 ## Next Steps
 

@@ -12,7 +12,7 @@ package org.opensearch.docs.action;
 import org.opensearch.action.ActionType;
 
 public class DeleteDocumentAction extends ActionType<DeleteDocumentResponse> {
-  public static final String NAME = "cluster:admin/opensearch/docs/document/delete";
+  public static final String NAME = "docs:document/delete";
   public static final DeleteDocumentAction INSTANCE = new DeleteDocumentAction();
 
   private DeleteDocumentAction() {

@@ -40,8 +40,7 @@ public class DeleteDocumentRestAction extends BaseRestHandler {
     Long primaryTerm =
         request.hasParam("primaryTerm") ? request.paramAsLong("primaryTerm", -1L) : null;
 
-    DeleteDocumentRequest actionRequest =
-        new DeleteDocumentRequest(documentId, seqNo, primaryTerm);
+    DeleteDocumentRequest actionRequest = new DeleteDocumentRequest(documentId, seqNo, primaryTerm);
     return channel ->
         client.executeLocally(
             DeleteDocumentAction.INSTANCE, actionRequest, new RestToXContentListener<>(channel));

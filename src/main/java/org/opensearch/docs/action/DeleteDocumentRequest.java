@@ -14,11 +14,13 @@ import static org.opensearch.action.ValidateActions.addValidationError;
 import java.io.IOException;
 import org.opensearch.action.ActionRequest;
 import org.opensearch.action.ActionRequestValidationException;
+import org.opensearch.action.DocRequest;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.docs.Constants;
 
-public class DeleteDocumentRequest extends ActionRequest {
+public class DeleteDocumentRequest extends ActionRequest implements DocRequest {
   private final String documentId;
   private final Long seqNo;
   private final Long primaryTerm;
@@ -46,6 +48,21 @@ public class DeleteDocumentRequest extends ActionRequest {
 
   public long getPrimaryTerm() {
     return primaryTerm == null ? -1L : primaryTerm;
+  }
+
+  @Override
+  public String index() {
+    return Constants.DOCS_INDEX;
+  }
+
+  @Override
+  public String id() {
+    return documentId;
+  }
+
+  @Override
+  public String type() {
+    return Constants.DOC_RESOURCE_TYPE;
   }
 
   @Override
