@@ -33,6 +33,16 @@ public class DocsResourceSharingExtension implements ResourceSharingExtension {
           public String typeField() {
             return "resource_type";
           }
+
+          @Override
+          public String parentType() {
+            return Constants.FOLDER_RESOURCE_TYPE;
+          }
+
+          @Override
+          public String parentIdField() {
+            return "folder_id";
+          }
         },
         new ResourceProvider() {
           @Override
@@ -48,6 +58,16 @@ public class DocsResourceSharingExtension implements ResourceSharingExtension {
           @Override
           public String typeField() {
             return "resource_type";
+          }
+
+          @Override
+          public String parentType() {
+            return Constants.FOLDER_RESOURCE_TYPE;
+          }
+
+          @Override
+          public String parentIdField() {
+            return "parent_id";
           }
         });
   }

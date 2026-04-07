@@ -4,17 +4,14 @@ resource_types:
       default: true
       allowed_actions:
         - "docs:document/get"
-        - "docs:document/list"
     docs_read_write:
       allowed_actions:
         - "docs:document/get"
-        - "docs:document/list"
         - "docs:document/upsert"
         - "docs:document/delete"
     docs_full_access:
       allowed_actions:
         - "docs:document/get"
-        - "docs:document/list"
         - "docs:document/upsert"
         - "docs:document/delete"
         - "cluster:admin/security/resource/share"
@@ -23,17 +20,21 @@ resource_types:
       default: true
       allowed_actions:
         - "docs:folder/get"
-        - "docs:folder/list"
+        - "docs:document/get"
     folders_read_write:
       allowed_actions:
         - "docs:folder/get"
-        - "docs:folder/list"
         - "docs:folder/upsert"
         - "docs:folder/delete"
+        - "docs:document/get"
+        - "docs:document/upsert"
+        - "docs:document/delete"
     folders_full_access:
       allowed_actions:
         - "docs:folder/get"
-        - "docs:folder/list"
         - "docs:folder/upsert"
         - "docs:folder/delete"
+        - "docs:document/get"
+        - "docs:document/upsert"
+        - "docs:document/delete"
         - "cluster:admin/security/resource/share"
