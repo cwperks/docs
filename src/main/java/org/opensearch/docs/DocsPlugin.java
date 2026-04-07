@@ -1,6 +1,10 @@
 /*
  * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
  */
 
 package org.opensearch.docs;
@@ -10,7 +14,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Supplier;
-
 import org.opensearch.action.ActionRequest;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.node.DiscoveryNodes;
@@ -49,65 +52,67 @@ import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 import org.opensearch.watcher.ResourceWatcherService;
 
-public class DocsPlugin extends Plugin implements ActionPlugin, SystemIndexPlugin, IdentityAwarePlugin {
-    private PluginClient pluginClient;
+public class DocsPlugin extends Plugin
+    implements ActionPlugin, SystemIndexPlugin, IdentityAwarePlugin {
+  private PluginClient pluginClient;
 
-    @Override
-    public Collection<SystemIndexDescriptor> getSystemIndexDescriptors(Settings settings) {
-        return Collections.singletonList(
-            new SystemIndexDescriptor(Constants.DOCS_INDEX, "Stores collaborative documents for the OpenSearch Docs plugin")
-        );
-    }
+  @Override
+  public Collection<SystemIndexDescriptor> getSystemIndexDescriptors(Settings settings) {
+    return Collections.singletonList(
+        new SystemIndexDescriptor(
+            Constants.DOCS_INDEX, "Stores collaborative documents for the OpenSearch Docs plugin"));
+  }
 
-    @Override
-    public Collection<Object> createComponents(
-        Client client,
-        ClusterService clusterService,
-        ThreadPool threadPool,
-        ResourceWatcherService resourceWatcherService,
-        ScriptService scriptService,
-        NamedXContentRegistry xContentRegistry,
-        Environment environment,
-        NodeEnvironment nodeEnvironment,
-        NamedWriteableRegistry namedWriteableRegistry,
-        IndexNameExpressionResolver indexNameExpressionResolver,
-        Supplier<RepositoriesService> repositoriesServiceSupplier
-    ) {
-        this.pluginClient = new PluginClient(client);
-        DocumentIndexService documentIndexService = new DocumentIndexService(pluginClient);
-        return List.of(pluginClient, documentIndexService);
-    }
+  @Override
+  public Collection<Object> createComponents(
+      Client client,
+      ClusterService clusterService,
+      ThreadPool threadPool,
+      ResourceWatcherService resourceWatcherService,
+      ScriptService scriptService,
+      NamedXContentRegistry xContentRegistry,
+      Environment environment,
+      NodeEnvironment nodeEnvironment,
+      NamedWriteableRegistry namedWriteableRegistry,
+      IndexNameExpressionResolver indexNameExpressionResolver,
+      Supplier<RepositoriesService> repositoriesServiceSupplier) {
+    this.pluginClient = new PluginClient(client);
+    DocumentIndexService documentIndexService = new DocumentIndexService(pluginClient);
+    return List.of(pluginClient, documentIndexService);
+  }
 
-    @Override
-    public List<RestHandler> getRestHandlers(
-        Settings settings,
-        RestController restController,
-        ClusterSettings clusterSettings,
-        IndexScopedSettings indexScopedSettings,
-        SettingsFilter settingsFilter,
-        IndexNameExpressionResolver indexNameExpressionResolver,
-        Supplier<DiscoveryNodes> nodesInCluster
-    ) {
-        List<RestHandler> handlers = new ArrayList<>();
-        handlers.add(new ListDocumentsRestAction());
-        handlers.add(new GetDocumentRestAction());
-        handlers.add(new UpsertDocumentRestAction());
-        return handlers;
-    }
+  @Override
+  public List<RestHandler> getRestHandlers(
+      Settings settings,
+      RestController restController,
+      ClusterSettings clusterSettings,
+      IndexScopedSettings indexScopedSettings,
+      SettingsFilter settingsFilter,
+      IndexNameExpressionResolver indexNameExpressionResolver,
+      Supplier<DiscoveryNodes> nodesInCluster) {
+    List<RestHandler> handlers = new ArrayList<>();
+    handlers.add(new ListDocumentsRestAction());
+    handlers.add(new GetDocumentRestAction());
+    handlers.add(new UpsertDocumentRestAction());
+    return handlers;
+  }
 
-    @Override
-    public List<ActionHandler<? extends ActionRequest, ? extends ActionResponse>> getActions() {
-        List<ActionHandler<? extends ActionRequest, ? extends ActionResponse>> actions = new ArrayList<>();
-        actions.add(new ActionHandler<>(ListDocumentsAction.INSTANCE, ListDocumentsTransportAction.class));
-        actions.add(new ActionHandler<>(GetDocumentAction.INSTANCE, GetDocumentTransportAction.class));
-        actions.add(new ActionHandler<>(UpsertDocumentAction.INSTANCE, UpsertDocumentTransportAction.class));
-        return actions;
-    }
+  @Override
+  public List<ActionHandler<? extends ActionRequest, ? extends ActionResponse>> getActions() {
+    List<ActionHandler<? extends ActionRequest, ? extends ActionResponse>> actions =
+        new ArrayList<>();
+    actions.add(
+        new ActionHandler<>(ListDocumentsAction.INSTANCE, ListDocumentsTransportAction.class));
+    actions.add(new ActionHandler<>(GetDocumentAction.INSTANCE, GetDocumentTransportAction.class));
+    actions.add(
+        new ActionHandler<>(UpsertDocumentAction.INSTANCE, UpsertDocumentTransportAction.class));
+    return actions;
+  }
 
-    @Override
-    public void assignSubject(PluginSubject pluginSubject) {
-        if (pluginClient != null) {
-            pluginClient.setSubject(pluginSubject);
-        }
+  @Override
+  public void assignSubject(PluginSubject pluginSubject) {
+    if (pluginClient != null) {
+      pluginClient.setSubject(pluginSubject);
     }
+  }
 }

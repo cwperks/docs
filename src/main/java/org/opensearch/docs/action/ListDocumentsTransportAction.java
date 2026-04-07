@@ -1,6 +1,10 @@
 /*
  * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
  */
 
 package org.opensearch.docs.action;
@@ -13,21 +17,22 @@ import org.opensearch.docs.service.DocumentIndexService;
 import org.opensearch.tasks.Task;
 import org.opensearch.transport.TransportService;
 
-public class ListDocumentsTransportAction extends HandledTransportAction<ListDocumentsRequest, ListDocumentsResponse> {
-    private final DocumentIndexService documentIndexService;
+public class ListDocumentsTransportAction
+    extends HandledTransportAction<ListDocumentsRequest, ListDocumentsResponse> {
+  private final DocumentIndexService documentIndexService;
 
-    @Inject
-    public ListDocumentsTransportAction(
-        TransportService transportService,
-        ActionFilters actionFilters,
-        DocumentIndexService documentIndexService
-    ) {
-        super(ListDocumentsAction.NAME, transportService, actionFilters, ListDocumentsRequest::new);
-        this.documentIndexService = documentIndexService;
-    }
+  @Inject
+  public ListDocumentsTransportAction(
+      TransportService transportService,
+      ActionFilters actionFilters,
+      DocumentIndexService documentIndexService) {
+    super(ListDocumentsAction.NAME, transportService, actionFilters, ListDocumentsRequest::new);
+    this.documentIndexService = documentIndexService;
+  }
 
-    @Override
-    protected void doExecute(Task task, ListDocumentsRequest request, ActionListener<ListDocumentsResponse> listener) {
-        documentIndexService.listDocuments(request.getQuery(), request.getSize(), listener);
-    }
+  @Override
+  protected void doExecute(
+      Task task, ListDocumentsRequest request, ActionListener<ListDocumentsResponse> listener) {
+    documentIndexService.listDocuments(request.getQuery(), request.getSize(), listener);
+  }
 }

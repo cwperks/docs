@@ -1,6 +1,10 @@
 /*
  * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
  */
 
 package org.opensearch.docs.action;
@@ -8,10 +12,10 @@ package org.opensearch.docs.action;
 import org.opensearch.action.ActionType;
 
 public class ListDocumentsAction extends ActionType<ListDocumentsResponse> {
-    public static final String NAME = "cluster:admin/opensearch/docs/document/list";
-    public static final ListDocumentsAction INSTANCE = new ListDocumentsAction();
+  public static final String NAME = "cluster:admin/opensearch/docs/document/list";
+  public static final ListDocumentsAction INSTANCE = new ListDocumentsAction();
 
-    private ListDocumentsAction() {
-        super(NAME, ListDocumentsResponse::new);
-    }
+  private ListDocumentsAction() {
+    super(NAME, ListDocumentsResponse::new);
+  }
 }
