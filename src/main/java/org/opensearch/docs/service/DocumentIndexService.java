@@ -21,6 +21,7 @@ import org.opensearch.action.DocWriteResponse;
 import org.opensearch.action.get.GetRequest;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.search.SearchRequest;
+import org.opensearch.action.support.GroupedActionListener;
 import org.opensearch.action.support.WriteRequest;
 import org.opensearch.common.inject.Inject;
 import org.opensearch.common.settings.Settings;
@@ -355,76 +356,208 @@ public class DocumentIndexService {
                     request.getFolderId(),
                     ActionListener.wrap(
                         existing ->
-                            ensureFolderHasNoChildren(
+                            softDeleteFolderRecursive(
                                 existing,
-                                ActionListener.wrap(
-                                    hasChildren -> {
-                                      if (hasChildren) {
-                                        listener.onFailure(
-                                            new IllegalStateException(
-                                                "Folder ["
-                                                    + existing.getPath()
-                                                    + "] cannot be deleted while it contains child folders"));
-                                        return;
-                                      }
-
-                                      ensureFolderHasDocuments(
-                                          existing.getPath(),
-                                          ActionListener.wrap(
-                                              hasDocuments -> {
-                                                if (hasDocuments) {
-                                                  listener.onFailure(
-                                                      new IllegalStateException(
-                                                          "Folder ["
-                                                              + existing.getPath()
-                                                              + "] cannot be deleted while it contains documents"));
-                                                  return;
-                                                }
-
-                                                long now = Instant.now().toEpochMilli();
-                                                FolderRecord deleted =
-                                                    new FolderRecord(
-                                                        existing.getId(),
-                                                        existing.getResourceType(),
-                                                        existing.getAllSharedPrincipals(),
-                                                        existing.getName(),
-                                                        existing.getPath(),
-                                                        existing.getParentId(),
-                                                        existing.getOwner(),
-                                                        actor,
-                                                        existing.getCreatedAt(),
-                                                        now,
-                                                        true,
-                                                        now,
-                                                        actor,
-                                                        request.getSeqNo(),
-                                                        request.getPrimaryTerm());
-
-                                                IndexRequest indexRequest =
-                                                    pluginClient
-                                                        .prepareIndex(Constants.DOCS_INDEX)
-                                                        .setId(existing.getId())
-                                                        .setIfSeqNo(request.getSeqNo())
-                                                        .setIfPrimaryTerm(request.getPrimaryTerm())
-                                                        .setSource(
-                                                            toSource(deleted), XContentType.JSON)
-                                                        .setRefreshPolicy(
-                                                            WriteRequest.RefreshPolicy.IMMEDIATE)
-                                                        .request();
-
-                                                pluginClient.index(
-                                                    indexRequest,
-                                                    ActionListener.wrap(
-                                                        indexResponse ->
-                                                            listener.onResponse(
-                                                                new DeleteFolderResponse(
-                                                                    true, indexResponse.getId())),
-                                                        listener::onFailure));
-                                              },
-                                              listener::onFailure));
-                                    },
-                                    listener::onFailure)),
+                                actor,
+                                request.getSeqNo(),
+                                request.getPrimaryTerm(),
+                                listener),
                         listener::onFailure)),
+            listener::onFailure));
+  }
+
+  private void softDeleteFolderRecursive(
+      FolderRecord folder,
+      String actor,
+      long seqNo,
+      long primaryTerm,
+      ActionListener<DeleteFolderResponse> listener) {
+    // First, soft-delete all documents in this folder
+    softDeleteDocumentsInFolder(
+        folder.getPath(),
+        actor,
+        ActionListener.wrap(
+            docsDeleted -> {
+              // Then, find and recursively delete child folders
+              findChildFolders(
+                  folder.getId(),
+                  folder.getPath(),
+                  ActionListener.wrap(
+                      childFolders -> {
+                        if (childFolders.isEmpty()) {
+                          // No children — delete this folder
+                          performFolderSoftDelete(folder, actor, seqNo, primaryTerm, listener);
+                          return;
+                        }
+                        // Recursively delete each child folder, then delete this one
+                        deleteChildFoldersSequentially(
+                            childFolders,
+                            0,
+                            actor,
+                            ActionListener.wrap(
+                                allDeleted ->
+                                    performFolderSoftDelete(
+                                        folder, actor, seqNo, primaryTerm, listener),
+                                listener::onFailure));
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  private void deleteChildFoldersSequentially(
+      List<FolderRecord> children, int index, String actor, ActionListener<Void> listener) {
+    if (index >= children.size()) {
+      listener.onResponse(null);
+      return;
+    }
+    FolderRecord child = children.get(index);
+    softDeleteFolderRecursive(
+        child,
+        actor,
+        child.getSeqNo(),
+        child.getPrimaryTerm(),
+        ActionListener.wrap(
+            deleted -> deleteChildFoldersSequentially(children, index + 1, actor, listener),
+            listener::onFailure));
+  }
+
+  private void softDeleteDocumentsInFolder(
+      String folderPath, String actor, ActionListener<Void> listener) {
+    BoolQueryBuilder query =
+        activeResourceFilter(Constants.DOC_RESOURCE_TYPE)
+            .must(QueryBuilders.termQuery("folder_path", folderPath));
+    pluginClient.search(
+        new SearchRequest(Constants.DOCS_INDEX)
+            .source(new SearchSourceBuilder().size(200).query(query)),
+        ActionListener.wrap(
+            response -> {
+              var hits = response.getHits().getHits();
+              if (hits.length == 0) {
+                listener.onResponse(null);
+                return;
+              }
+              long now = Instant.now().toEpochMilli();
+              GroupedActionListener<Void> groupListener =
+                  new GroupedActionListener<>(
+                      ActionListener.wrap(
+                          results -> listener.onResponse(null), listener::onFailure),
+                      hits.length);
+              for (var hit : hits) {
+                DocumentRecord doc =
+                    DocumentRecord.fromSource(
+                        hit.getId(), hit.getSeqNo(), hit.getPrimaryTerm(), hit.getSourceAsMap());
+                DocumentRecord deleted =
+                    new DocumentRecord(
+                        doc.getId(),
+                        doc.getResourceType(),
+                        doc.getAllSharedPrincipals(),
+                        doc.getTitle(),
+                        doc.getContent(),
+                        doc.getFolderId(),
+                        doc.getFolderPath(),
+                        doc.getOwner(),
+                        actor,
+                        doc.getCreatedAt(),
+                        now,
+                        true,
+                        now,
+                        actor,
+                        doc.getSeqNo(),
+                        doc.getPrimaryTerm());
+                IndexRequest ir =
+                    pluginClient
+                        .prepareIndex(Constants.DOCS_INDEX)
+                        .setId(doc.getId())
+                        .setIfSeqNo(doc.getSeqNo())
+                        .setIfPrimaryTerm(doc.getPrimaryTerm())
+                        .setSource(toSource(deleted), XContentType.JSON)
+                        .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                        .request();
+                pluginClient.index(
+                    ir,
+                    ActionListener.wrap(
+                        r -> groupListener.onResponse(null), groupListener::onFailure));
+              }
+            },
+            listener::onFailure));
+  }
+
+  private void findChildFolders(
+      String parentId, String parentPath, ActionListener<List<FolderRecord>> listener) {
+    BoolQueryBuilder query =
+        activeResourceFilter(Constants.FOLDER_RESOURCE_TYPE)
+            .must(
+                QueryBuilders.boolQuery()
+                    .should(QueryBuilders.termQuery("parent_id", parentId))
+                    .should(QueryBuilders.prefixQuery("path.keyword", parentPath + "/"))
+                    .minimumShouldMatch(1));
+    pluginClient.search(
+        new SearchRequest(Constants.DOCS_INDEX)
+            .source(new SearchSourceBuilder().size(200).query(query)),
+        ActionListener.wrap(
+            response -> {
+              List<FolderRecord> folders =
+                  java.util.Arrays.stream(response.getHits().getHits())
+                      .map(
+                          hit ->
+                              FolderRecord.fromSource(
+                                  hit.getId(),
+                                  hit.getSeqNo(),
+                                  hit.getPrimaryTerm(),
+                                  hit.getSourceAsMap()))
+                      .filter(f -> !f.getId().equals(parentId))
+                      .toList();
+              listener.onResponse(folders);
+            },
+            listener::onFailure));
+  }
+
+  private void performFolderSoftDelete(
+      FolderRecord existing,
+      String actor,
+      long seqNo,
+      long primaryTerm,
+      ActionListener<DeleteFolderResponse> listener) {
+    // Re-fetch to get latest seqNo/primaryTerm (may have changed due to visibility updates)
+    getFolderRecord(
+        existing.getId(),
+        ActionListener.wrap(
+            fresh -> {
+              long now = Instant.now().toEpochMilli();
+              FolderRecord deleted =
+                  new FolderRecord(
+                      fresh.getId(),
+                      fresh.getResourceType(),
+                      fresh.getAllSharedPrincipals(),
+                      fresh.getName(),
+                      fresh.getPath(),
+                      fresh.getParentId(),
+                      fresh.getOwner(),
+                      actor,
+                      fresh.getCreatedAt(),
+                      now,
+                      true,
+                      now,
+                      actor,
+                      fresh.getSeqNo(),
+                      fresh.getPrimaryTerm());
+              IndexRequest indexRequest =
+                  pluginClient
+                      .prepareIndex(Constants.DOCS_INDEX)
+                      .setId(fresh.getId())
+                      .setIfSeqNo(fresh.getSeqNo())
+                      .setIfPrimaryTerm(fresh.getPrimaryTerm())
+                      .setSource(toSource(deleted), XContentType.JSON)
+                      .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                      .request();
+              pluginClient.index(
+                  indexRequest,
+                  ActionListener.wrap(
+                      indexResponse ->
+                          listener.onResponse(new DeleteFolderResponse(true, indexResponse.getId())),
+                      listener::onFailure));
+            },
             listener::onFailure));
   }
 
