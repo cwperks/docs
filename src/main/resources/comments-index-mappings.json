@@ -1,0 +1,35 @@
+{
+  "dynamic": "strict",
+  "properties": {
+    "document_id": {
+      "type": "keyword"
+    },
+    "thread_id": {
+      "type": "keyword"
+    },
+    "comment_text": {
+      "type": "text"
+    },
+    "start_offset": {
+      "type": "integer"
+    },
+    "end_offset": {
+      "type": "integer"
+    },
+    "owner": {
+      "type": "keyword"
+    },
+    "created_at": {
+      "type": "date"
+    },
+    "updated_at": {
+      "type": "date"
+    },
+    "is_deleted": {
+      "type": "boolean"
+    },
+    "read_by": {
+      "type": "keyword"
+    }
+  }
+}

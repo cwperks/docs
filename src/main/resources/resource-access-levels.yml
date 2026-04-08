@@ -4,16 +4,32 @@ resource_types:
       default: true
       allowed_actions:
         - "docs:document/get"
+        - "docs:comment/list"
+    docs_comment:
+      allowed_actions:
+        - "docs:document/get"
+        - "docs:comment/list"
+        - "docs:comment/create"
+        - "docs:comment/update"
+        - "docs:comment/delete"
     docs_read_write:
       allowed_actions:
         - "docs:document/get"
         - "docs:document/upsert"
         - "docs:document/delete"
+        - "docs:comment/list"
+        - "docs:comment/create"
+        - "docs:comment/update"
+        - "docs:comment/delete"
     docs_full_access:
       allowed_actions:
         - "docs:document/get"
         - "docs:document/upsert"
         - "docs:document/delete"
+        - "docs:comment/list"
+        - "docs:comment/create"
+        - "docs:comment/update"
+        - "docs:comment/delete"
         - "cluster:admin/security/resource/share"
   docs-folder:
     folders_read_only:
@@ -21,6 +37,15 @@ resource_types:
       allowed_actions:
         - "docs:folder/get"
         - "docs:document/get"
+        - "docs:comment/list"
+    folders_comment:
+      allowed_actions:
+        - "docs:folder/get"
+        - "docs:document/get"
+        - "docs:comment/list"
+        - "docs:comment/create"
+        - "docs:comment/update"
+        - "docs:comment/delete"
     folders_read_write:
       allowed_actions:
         - "docs:folder/get"
@@ -29,6 +54,10 @@ resource_types:
         - "docs:document/get"
         - "docs:document/upsert"
         - "docs:document/delete"
+        - "docs:comment/list"
+        - "docs:comment/create"
+        - "docs:comment/update"
+        - "docs:comment/delete"
     folders_full_access:
       allowed_actions:
         - "docs:folder/get"
@@ -37,4 +66,8 @@ resource_types:
         - "docs:document/get"
         - "docs:document/upsert"
         - "docs:document/delete"
+        - "docs:comment/list"
+        - "docs:comment/create"
+        - "docs:comment/update"
+        - "docs:comment/delete"
         - "cluster:admin/security/resource/share"

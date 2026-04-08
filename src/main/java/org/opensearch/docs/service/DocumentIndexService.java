@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.opensearch.ResourceNotFoundException;
@@ -28,18 +29,24 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.docs.Constants;
+import org.opensearch.docs.action.CreateCommentRequest;
+import org.opensearch.docs.action.CreateCommentResponse;
+import org.opensearch.docs.action.DeleteCommentRequest;
+import org.opensearch.docs.action.DeleteCommentResponse;
 import org.opensearch.docs.action.DeleteDocumentRequest;
 import org.opensearch.docs.action.DeleteDocumentResponse;
 import org.opensearch.docs.action.DeleteFolderRequest;
 import org.opensearch.docs.action.DeleteFolderResponse;
 import org.opensearch.docs.action.GetDocumentResponse;
 import org.opensearch.docs.action.GetFolderResponse;
+import org.opensearch.docs.action.ListCommentsResponse;
 import org.opensearch.docs.action.ListDocumentsResponse;
 import org.opensearch.docs.action.ListFoldersResponse;
 import org.opensearch.docs.action.UpsertDocumentRequest;
 import org.opensearch.docs.action.UpsertDocumentResponse;
 import org.opensearch.docs.action.UpsertFolderRequest;
 import org.opensearch.docs.action.UpsertFolderResponse;
+import org.opensearch.docs.model.CommentRecord;
 import org.opensearch.docs.model.DocumentRecord;
 import org.opensearch.docs.model.DocumentSummary;
 import org.opensearch.docs.model.FolderRecord;
@@ -555,7 +562,8 @@ public class DocumentIndexService {
                   indexRequest,
                   ActionListener.wrap(
                       indexResponse ->
-                          listener.onResponse(new DeleteFolderResponse(true, indexResponse.getId())),
+                          listener.onResponse(
+                              new DeleteFolderResponse(true, indexResponse.getId())),
                       listener::onFailure));
             },
             listener::onFailure));
@@ -1229,5 +1237,274 @@ public class DocumentIndexService {
 
   private String quoteArray(List<String> values) {
     return values.stream().map(this::quote).collect(Collectors.joining(", ", "[", "]"));
+  }
+
+  // ---- Comments ----
+
+  public void listComments(String documentId, ActionListener<ListCommentsResponse> listener) {
+    ensureCommentsIndexReady(
+        ActionListener.wrap(
+            ignored -> {
+              SearchSourceBuilder source =
+                  new SearchSourceBuilder()
+                      .size(500)
+                      .sort("created_at", SortOrder.ASC)
+                      .query(
+                          QueryBuilders.boolQuery()
+                              .must(QueryBuilders.termQuery("document_id", documentId))
+                              .mustNot(QueryBuilders.termQuery("is_deleted", true)));
+              pluginClient.search(
+                  new SearchRequest(Constants.COMMENTS_INDEX).source(source),
+                  ActionListener.wrap(
+                      response -> {
+                        List<CommentRecord> comments =
+                            java.util.Arrays.stream(response.getHits().getHits())
+                                .map(
+                                    hit ->
+                                        CommentRecord.fromSource(
+                                            hit.getId(),
+                                            hit.getSeqNo(),
+                                            hit.getPrimaryTerm(),
+                                            hit.getSourceAsMap()))
+                                .toList();
+                        listener.onResponse(new ListCommentsResponse(comments));
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  public void createComment(
+      CreateCommentRequest request, String actor, ActionListener<CreateCommentResponse> listener) {
+    ensureCommentsIndexReady(
+        ActionListener.wrap(
+            ignored -> {
+              long now = Instant.now().toEpochMilli();
+              String commentId = UUID.randomUUID().toString();
+              String threadId =
+                  request.getThreadId() != null && !request.getThreadId().isBlank()
+                      ? request.getThreadId()
+                      : commentId;
+
+              String commentSource =
+                  """
+          {
+            "document_id": %s,
+            "thread_id": %s,
+            "comment_text": %s,
+            "start_offset": %d,
+            "end_offset": %d,
+            "owner": %s,
+            "created_at": %d,
+            "updated_at": %d,
+            "is_deleted": false,
+            "read_by": [%s]
+          }
+          """
+                      .formatted(
+                          quote(request.getDocumentId()),
+                          quote(threadId),
+                          quote(request.getCommentText()),
+                          request.getStartOffset(),
+                          request.getEndOffset(),
+                          quote(actor),
+                          now,
+                          now,
+                          quote(actor));
+
+              IndexRequest indexRequest =
+                  pluginClient
+                      .prepareIndex(Constants.COMMENTS_INDEX)
+                      .setId(commentId)
+                      .setSource(commentSource, XContentType.JSON)
+                      .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                      .request();
+
+              pluginClient.index(
+                  indexRequest,
+                  ActionListener.wrap(
+                      response -> {
+                        CommentRecord comment =
+                            new CommentRecord(
+                                response.getId(),
+                                Constants.COMMENT_RESOURCE_TYPE,
+                                request.getDocumentId(),
+                                threadId,
+                                request.getCommentText(),
+                                request.getStartOffset(),
+                                request.getEndOffset(),
+                                actor,
+                                now,
+                                now,
+                                false,
+                                List.of(actor),
+                                response.getSeqNo(),
+                                response.getPrimaryTerm());
+                        listener.onResponse(new CreateCommentResponse(comment));
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  public void deleteComment(
+      DeleteCommentRequest request, String actor, ActionListener<DeleteCommentResponse> listener) {
+    ensureCommentsIndexReady(
+        ActionListener.wrap(
+            ignored -> {
+              pluginClient.get(
+                  new GetRequest(Constants.COMMENTS_INDEX, request.getCommentId()),
+                  ActionListener.wrap(
+                      response -> {
+                        if (!response.isExists()) {
+                          listener.onFailure(
+                              new ResourceNotFoundException(
+                                  "Comment [" + request.getCommentId() + "] does not exist"));
+                          return;
+                        }
+                        CommentRecord existing =
+                            CommentRecord.fromSource(
+                                response.getId(),
+                                response.getSeqNo(),
+                                response.getPrimaryTerm(),
+                                response.getSourceAsMap());
+
+                        long now = Instant.now().toEpochMilli();
+                        String deletedSource =
+                            """
+                {
+                  "document_id": %s,
+                  "thread_id": %s,
+                  "comment_text": %s,
+                  "start_offset": %d,
+                  "end_offset": %d,
+                  "owner": %s,
+                  "created_at": %d,
+                  "updated_at": %d,
+                  "is_deleted": true,
+                  "read_by": %s
+                }
+                """
+                                .formatted(
+                                    quote(existing.getDocumentId()),
+                                    quote(existing.getThreadId()),
+                                    quote(existing.getCommentText()),
+                                    existing.getStartOffset(),
+                                    existing.getEndOffset(),
+                                    quote(existing.getOwner()),
+                                    existing.getCreatedAt(),
+                                    now,
+                                    quoteArray(existing.getReadBy()));
+
+                        IndexRequest indexRequest =
+                            pluginClient
+                                .prepareIndex(Constants.COMMENTS_INDEX)
+                                .setId(existing.getId())
+                                .setIfSeqNo(existing.getSeqNo())
+                                .setIfPrimaryTerm(existing.getPrimaryTerm())
+                                .setSource(deletedSource, XContentType.JSON)
+                                .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE)
+                                .request();
+
+                        pluginClient.index(
+                            indexRequest,
+                            ActionListener.wrap(
+                                indexResponse ->
+                                    listener.onResponse(
+                                        new DeleteCommentResponse(true, indexResponse.getId())),
+                                listener::onFailure));
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  public void markCommentsRead(String documentId, String userName, ActionListener<Void> listener) {
+    ensureCommentsIndexReady(
+        ActionListener.wrap(
+            ignored -> {
+              SearchSourceBuilder source =
+                  new SearchSourceBuilder()
+                      .size(500)
+                      .query(
+                          QueryBuilders.boolQuery()
+                              .must(QueryBuilders.termQuery("document_id", documentId))
+                              .mustNot(QueryBuilders.termQuery("is_deleted", true))
+                              .mustNot(QueryBuilders.termQuery("read_by", userName)));
+              pluginClient.search(
+                  new SearchRequest(Constants.COMMENTS_INDEX).source(source),
+                  ActionListener.wrap(
+                      response -> {
+                        var hits = response.getHits().getHits();
+                        if (hits.length == 0) {
+                          listener.onResponse(null);
+                          return;
+                        }
+                        GroupedActionListener<Void> groupListener =
+                            new GroupedActionListener<>(
+                                ActionListener.wrap(
+                                    results -> listener.onResponse(null), listener::onFailure),
+                                hits.length);
+                        for (var hit : hits) {
+                          Map<String, Object> sourceMap = hit.getSourceAsMap();
+                          List<String> readBy =
+                              sourceMap.get("read_by") instanceof List<?>
+                                  ? ((List<?>) sourceMap.get("read_by"))
+                                      .stream().map(String::valueOf).collect(Collectors.toList())
+                                  : new java.util.ArrayList<>();
+                          readBy.add(userName);
+                          pluginClient.update(
+                              new org.opensearch.action.update.UpdateRequest(
+                                      Constants.COMMENTS_INDEX, hit.getId())
+                                  .doc(Map.of("read_by", readBy))
+                                  .setRefreshPolicy(WriteRequest.RefreshPolicy.IMMEDIATE),
+                              ActionListener.wrap(
+                                  r -> groupListener.onResponse(null), groupListener::onFailure));
+                        }
+                      },
+                      listener::onFailure));
+            },
+            listener::onFailure));
+  }
+
+  private void ensureCommentsIndexReady(ActionListener<Void> listener) {
+    pluginClient
+        .admin()
+        .indices()
+        .prepareExists(Constants.COMMENTS_INDEX)
+        .execute(
+            ActionListener.wrap(
+                response -> {
+                  if (response.isExists()) {
+                    listener.onResponse(null);
+                    return;
+                  }
+                  String mappings = loadResource(Constants.COMMENTS_MAPPINGS_RESOURCE_PATH);
+                  pluginClient
+                      .admin()
+                      .indices()
+                      .prepareCreate(Constants.COMMENTS_INDEX)
+                      .setSettings(
+                          Settings.builder()
+                              .put("index.hidden", true)
+                              .put("index.number_of_shards", 1)
+                              .put("index.number_of_replicas", 0))
+                      .setMapping(mappings)
+                      .execute(
+                          ActionListener.wrap(
+                              createResponse -> listener.onResponse(null), listener::onFailure));
+                },
+                listener::onFailure));
+  }
+
+  private String loadResource(String resourcePath) {
+    try (InputStream inputStream = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
+      if (inputStream == null) {
+        throw new IllegalStateException("Could not find " + resourcePath + " on the classpath");
+      }
+      return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new IllegalStateException("Failed to load " + resourcePath, e);
+    }
   }
 }

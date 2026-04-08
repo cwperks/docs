@@ -11,7 +11,6 @@ package org.opensearch.docs;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Supplier;
 import org.opensearch.action.ActionRequest;
@@ -25,6 +24,10 @@ import org.opensearch.common.settings.SettingsFilter;
 import org.opensearch.core.action.ActionResponse;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.docs.action.CreateCommentAction;
+import org.opensearch.docs.action.CreateCommentTransportAction;
+import org.opensearch.docs.action.DeleteCommentAction;
+import org.opensearch.docs.action.DeleteCommentTransportAction;
 import org.opensearch.docs.action.DeleteDocumentAction;
 import org.opensearch.docs.action.DeleteDocumentTransportAction;
 import org.opensearch.docs.action.DeleteFolderAction;
@@ -33,6 +36,8 @@ import org.opensearch.docs.action.GetDocumentAction;
 import org.opensearch.docs.action.GetDocumentTransportAction;
 import org.opensearch.docs.action.GetFolderAction;
 import org.opensearch.docs.action.GetFolderTransportAction;
+import org.opensearch.docs.action.ListCommentsAction;
+import org.opensearch.docs.action.ListCommentsTransportAction;
 import org.opensearch.docs.action.ListDocumentsAction;
 import org.opensearch.docs.action.ListDocumentsTransportAction;
 import org.opensearch.docs.action.ListFoldersAction;
@@ -41,10 +46,13 @@ import org.opensearch.docs.action.UpsertDocumentAction;
 import org.opensearch.docs.action.UpsertDocumentTransportAction;
 import org.opensearch.docs.action.UpsertFolderAction;
 import org.opensearch.docs.action.UpsertFolderTransportAction;
+import org.opensearch.docs.rest.CreateCommentRestAction;
+import org.opensearch.docs.rest.DeleteCommentRestAction;
 import org.opensearch.docs.rest.DeleteDocumentRestAction;
 import org.opensearch.docs.rest.DeleteFolderRestAction;
 import org.opensearch.docs.rest.GetDocumentRestAction;
 import org.opensearch.docs.rest.GetFolderRestAction;
+import org.opensearch.docs.rest.ListCommentsRestAction;
 import org.opensearch.docs.rest.ListDocumentsRestAction;
 import org.opensearch.docs.rest.ListFoldersRestAction;
 import org.opensearch.docs.rest.UpsertDocumentRestAction;
@@ -73,9 +81,11 @@ public class DocsPlugin extends Plugin
 
   @Override
   public Collection<SystemIndexDescriptor> getSystemIndexDescriptors(Settings settings) {
-    return Collections.singletonList(
+    return List.of(
         new SystemIndexDescriptor(
-            Constants.DOCS_INDEX, "Stores collaborative documents for the OpenSearch Docs plugin"));
+            Constants.DOCS_INDEX, "Stores collaborative documents for the OpenSearch Docs plugin"),
+        new SystemIndexDescriptor(
+            Constants.COMMENTS_INDEX, "Stores comments for the OpenSearch Docs plugin"));
   }
 
   @Override
@@ -114,6 +124,9 @@ public class DocsPlugin extends Plugin
     handlers.add(new UpsertFolderRestAction());
     handlers.add(new DeleteDocumentRestAction());
     handlers.add(new DeleteFolderRestAction());
+    handlers.add(new ListCommentsRestAction());
+    handlers.add(new CreateCommentRestAction());
+    handlers.add(new DeleteCommentRestAction());
     return handlers;
   }
 
@@ -134,6 +147,12 @@ public class DocsPlugin extends Plugin
         new ActionHandler<>(DeleteDocumentAction.INSTANCE, DeleteDocumentTransportAction.class));
     actions.add(
         new ActionHandler<>(DeleteFolderAction.INSTANCE, DeleteFolderTransportAction.class));
+    actions.add(
+        new ActionHandler<>(ListCommentsAction.INSTANCE, ListCommentsTransportAction.class));
+    actions.add(
+        new ActionHandler<>(CreateCommentAction.INSTANCE, CreateCommentTransportAction.class));
+    actions.add(
+        new ActionHandler<>(DeleteCommentAction.INSTANCE, DeleteCommentTransportAction.class));
     return actions;
   }
 
